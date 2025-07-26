@@ -1,70 +1,78 @@
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from transformers import AutoModelForSequenceClassification, AutoTokenizer, AutoConfig
 from peft import PeftModel, PeftConfig
-from ferret import Benchmark, IntegratedGradientExplainer, SHAPExplainer
+from ferret import Benchmark, IntegratedGradientExplainer, SHAPExplainer, BaseDataset
 import torch
 import pandas as pd
 import numpy as np
+from abc import ABC, abstractmethod
 from tqdm import tqdm
+#############
+TEST_SET = "TEST_SET"
+class CustomDataset(BaseDataset):
+    def __init__(self,dataframe):
+        self.dataframe = dataframe
+    def __getitem__(self,idx):
+        return self.dataframe.loc[idx]
+    def __len__(self):
+      return len(self.dataframe)
+    @property
+    def NAME(self):
+        return 'Custom'
+    def get_instance(self, idx: int, split_type: str = TEST_SET):
+        pass
+    def _get_item(self, idx: int, split_type: str = TEST_SET):
+        pass
+    def _get_text(self, idx, split_type: str = TEST_SET):
+        pass
+    def _get_rationale(self, idx, split_type: str = TEST_SET):
+        pass
+    def _get_ground_truth(self, idx, split_type: str = TEST_SET):
+        pass
+    @property
+    def avg_rationale_size(self):
+        # Default value
+        return 5
+        
+#############
+###CUDA###
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-tokenizer = AutoTokenizer.from_pretrained('/storage/data2/up1072604/saved_tokenizer')
-model = AutoModelForSequenceClassification.from_pretrained('distilbert-base-uncased')
-lora = PeftModel.from_pretrained(model,'/storage/data2/up1072604/saved_model')
+
+###Load Saved tokenizer-model config- and lora weights###
+tokenizer = AutoTokenizer.from_pretrained('/storage/data2/up1072604/saved_tokenizers/IoT23/binary')
+#
+config = AutoConfig.from_pretrained("/storage/data2/up1072604/saved_models/IoT23/binary")
+model = AutoModelForSequenceClassification.from_pretrained('distilbert-base-uncased',config=config)
+#
+lora = PeftModel.from_pretrained(model,'/storage/data2/up1072604/saved_models/IoT23/binary')
 lora = lora.merge_and_unload()
 lora = lora.to(device)
-lora.eval()
+##
+print(lora.config.id2label)
+print(lora.config.label2id)
+print('Num labels:',lora.config.num_labels)
+
+##
+lora.eval() ###Evaluation mode since we are running inference/explainability
 #
 ###Explainers###
 shap = SHAPExplainer(lora,tokenizer)
 integrated_gradients = IntegratedGradientExplainer(lora,tokenizer)
 #
-bench = Benchmark(model, tokenizer,explainers=[shap,integrated_gradients])
+bench = Benchmark(lora,tokenizer,explainers=[shap,integrated_gradients])
 ###
-sequences_test = pd.read_csv('/storage/data2/up1072604/saves/sequences_test.csv')
-#print(len(sequences_test))
-#sample = sequences_test.sample()['text'].values[0]
-#print(sample)
-#input('WAIT')
+sequences = pd.read_csv('/storage/data2/up1072604/data/IoT23_sequences_binary.csv')
+sequences = sequences.sample(frac=1,random_state=42) #Shuffle. Do this only for iot23-edgeiiotset NOT HDFS(HDFS does not shuffle at first!)
+###Train-val-test split- Get the test set the same set from training script by setting same random state###
+sequences_train,sequences_test = train_test_split(sequences,test_size=0.1,stratify=sequences['label'],random_state=42,shuffle=True)
+sequences_train,sequences_validation = train_test_split(sequences_train,test_size=0.1111,stratify=sequences_train['label'],random_state=42,shuffle=True)
+###Sample from the test set###
 sequences_test = sequences_test.sample(n=1000,random_state=42)
-texts = list(sequences_test['text'])
-###
-def explain(text):
-    #explanations = bench.explain(text,target=1,call_args=arguments) #lets say target=1 positive class
-    expl_shap = shap(text,target=1,batch_size=64)
-    expl_integrated_gradients = integrated_gradients(text,target=1,internal_batch_size=64)
-    explanations = [expl_shap,expl_integrated_gradients]    
-    metrics = bench.evaluate_explanations(explanations,target=1)
-    return metrics
-###Batched Inference######
-#print('Metrics for text: \n',explain(sample))
-def showTable(object):
-            explanation = object.explanation
-            return {
-            "explainer":explanation.explainer,
-            "target":explanation.target,
-            "metrics":{score.name:score.score for score in object.evaluation_scores}
-            }
-
-#all_metrics = explain(sample)
-#print('ALL METRICS: \n',all_metrics[0])
-#results = [showTable(example) for example in all_metrics]
-#print('\nResults:',results)
-shaps = []
-igs = []
-print(f'length of samples:{len(texts)}')
-for text in tqdm(texts):
-    #explanations for 2 methods for given text
-    expl_shap = shap(text,target=1,batch_size=64)
-    expl_integrated_gradients = integrated_gradients(text,target=1,internal_batch_size=64)
-    explanations = [expl_shap,expl_integrated_gradients]
-    metrics = bench.evaluate_explanations(explanations,target=1) #lista me dyo stixia explanationevaluation tou shap kai ig
-    #
-    shap_metrics = metrics[0]
-    ig_metrics = metrics[1]
-    #
-    shaps.append({score.name:score.score for score in shap_metrics.evaluation_scores})
-    igs.append({score.name:score.score for score in ig_metrics.evaluation_scores})
-shaps = pd.DataFrame(shaps)
-igs = pd.DataFrame(igs)
-print('SHAP METRICS:',shaps.mean(axis=0))
-print('Integrated Gradients:',igs.mean(axis=0))
-print('OK')
+###Convert to dataset- Get the indexes we want to explain###
+sequences_test_dataset = CustomDataset(sequences_test)
+sample = 
+###Evaluate samples###
+#sample= lista me ta indexes ton keimenon pou thelo na do
+results = bench.evaluate_samples(sequences_test_dataset,sample=,target=None,show_progress_bar=True) #if target=None it will compute attributions for the predicted class
+###Returns averaged metrics across all samples as defined above###
+results_df = bench.show_samples_evaluation_table(results,apply_style=False) #Return raw dataframe not styled/jupyter dependent
+print(results_df)
