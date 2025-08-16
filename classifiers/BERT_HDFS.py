@@ -1,132 +1,200 @@
-import pickle
 import pandas as pd
 import numpy as np
-from IPython.display import display, HTML
-from transformers import BertTokenizer,BertForSequenceClassification,Trainer,TrainingArguments
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from transformers import AutoTokenizer, AutoModelForSequenceClassification,Trainer,TrainingArguments,TrainingArguments,TrainerCallback
+from peft import LoraConfig, TaskType, get_peft_model
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 from sklearn.model_selection import train_test_split
 from datasets import Dataset
 import evaluate
-from scipy.special import expit
-##
+###Get the graphics card###
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
-###########event vectors/blocks###########
-event_traces = pd.read_csv('/home/up1072604/data/Event_traces.csv',usecols=['BlockId','Label','Features'])
+###Load event vectors/blocks###
+event_traces = pd.read_csv('/storage/data2/up1072604/data/Event_traces.csv',usecols=['BlockId','Label','Features'])
 event_traces['Label'] = event_traces['Label'].map({'Success':0,'Fail':1})
-#######event template- message#########
-log_templates = pd.read_csv('/home/up1072604/data/HDFS.log_templates.csv')
+###Get the templates to match with###
+log_templates = pd.read_csv('/storage/data2/up1072604/data/HDFS.log_templates.csv')
 
-##Dictionary of EventIds-Event text#######
+###Dictionary of EventIds-Event text###
 event_dictionary = dict(zip(log_templates['EventId'],log_templates['EventTemplate']))
 
 print(event_dictionary)
 
-#Information
+###Information-Dimensions-Overall Description###
 event_traces.info()
-print(event_traces.shape)
+print(event_traces.shape) 
 print(event_traces.describe())
 #
-#######Convert feature event vector to text ###### 
+###Convert feature event vector to text seperated with space ###
 def features_to_strings(entry):
   return " ".join([event_dictionary.get(eventID) for eventID in entry['Features'].replace('[','').replace(']','').split(',')])
 
-###
-##
-print('Class distribution: ',event_traces['Label'].value_counts())
-#
-#
-#input('WAIT')
+print('Class distribution of Labels: ',event_traces['Label'].value_counts())
+###Drop Unnecessary columns###
 event_traces.drop(columns=['BlockId'],inplace=True) #drop the block id
-'''
-EXPERIMENTING WITH UNDERSAMPLING ON WORSE HARDWARE
-#drop a portion of 0's labels as the data is too big and to lower the frequency of this class
-#
-#event_traces_0 = event_traces[event_traces['Label']==0]
-#event_traces_1 = event_traces[event_traces['Label']==1]
-#event_traces_0 = event_traces_0.sample(frac=0.05,random_state=42)#an valo 0.035-0.3 eimai poly konta sta #arithmo klaseon 1
-#event_traces = pd.concat([event_traces_0,event_traces_1],ignore_index=True)
-#event_traces['Features'] = event_traces.apply(features_to_strings,axis=1)
+###Make sure labels are integers not floats###
+event_traces['Label'] = event_traces['Label'].astype(int)
 
-#
-#print('Class distribution: ',event_traces['Label'].value_counts())
-#input('WAIT')
-'''
-
-#########Train test dev split##########
+###Train test dev split###
 event_traces_train,event_traces_test = train_test_split(event_traces,test_size=0.1,random_state=42,stratify=event_traces['Label'],shuffle=True)
 event_traces_train,event_traces_validation = train_test_split(event_traces_train,test_size=0.1111,stratify=event_traces_train['Label'],random_state=42,shuffle=True)
-#
+###Verify Distribution of Labels in subsets###
 print('Class distribution train: ',event_traces_train['Label'].value_counts())
 print('Class distribution validation: ',event_traces_validation['Label'].value_counts())
 print('Class distribution test: ',event_traces_test['Label'].value_counts())
-#######Apply on each row of the dataset###
+###Apply on each row of the dataset###
 event_traces_train['Features'] = event_traces_train.apply(features_to_strings,axis=1)
 event_traces_validation['Features'] = event_traces_validation.apply(features_to_strings,axis=1)
 event_traces_test['Features'] = event_traces_test.apply(features_to_strings,axis=1)
+###A Random Sample of train subset to verify everything is ok###
 print(event_traces_train.sample(1))
-#
+
+###Number of distinct labels in dataset###
+no_of_labels = int(event_traces['Label'].nunique())
+###Calculate class weights with the inverse class frequency(inverse of each class percentage in the train dataset)##
+weights = event_traces_train['Label'].value_counts(normalize=True)
+weights = torch.tensor([1/weights.loc[x] for x in sorted(list(weights.index))])
+print(weights)
+
+###Convert to Huggingface Dataset###
 event_traces_train = Dataset.from_pandas(event_traces_train)
 event_traces_test = Dataset.from_pandas(event_traces_test)
 event_traces_validation = Dataset.from_pandas(event_traces_validation)
-##
-tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased") # tokenizer
-#orisma ena line tou dataset opote epilego to column me to keimeno pou thelo na tokenaro
+###tokenizer and relative function###
+tokenizer = AutoTokenizer.from_pretrained("roberta-base") 
 def tokenize_logs(entry):
   tokens = tokenizer(entry['Features'],padding='max_length',truncation=True)
   tokens['labels'] = entry['Label']
   return tokens
 
-###############Tokenizing##########
+###Tokenizing###
 event_traces_train = event_traces_train.map(tokenize_logs,batched=True)
 event_traces_test = event_traces_test.map(tokenize_logs,batched=True)
 event_traces_validation = event_traces_validation.map(tokenize_logs,batched=True)
-#
-#########Fine tuning meso ton parakato parametron##########
-###METRICS####
-#accuracy = %(predicted=true)
-accuracy = evaluate.load("accuracy")
-roc_auc = evaluate.load("roc_auc")
-other_metrics = evaluate.combine(["precision","recall","f1"])
-def compute_metrics(eval_pred):
-    predictions, labels = eval_pred
-    prediction_scores = expit(predictions) #expit(logits)
-    roc_auc_score = roc_auc.compute(references=labels,prediction_scores=prediction_scores[:,1]) #y_true,y_labels
-    predictions = np.argmax(predictions, axis=-1)
-    other_metrics_scores = other_metrics.compute(predictions=predictions,references=labels,average=None) # kathe klash
-    accuracy_score = accuracy.compute(predictions=predictions,references=labels)["accuracy"] #epistrefei dict
-    return {"accuracy":accuracy_score,"precision_class_0":other_metrics_scores["precision"][0],"precision_class_1":other_metrics_scores["precision"][1],"recall_class_0":other_metrics_scores["recall"][0],"recall_class_1":other_metrics_scores["recall"][1],"f1_class_0":other_metrics_scores["f1"][0],"f1_class_1":other_metrics_scores["f1"][1],"roc_auc":roc_auc_score["roc_auc"]}
+####################
 
-
-###MODEL###
-model = AutoModelForSequenceClassification.from_pretrained("distilbert-base-uncased",num_labels=2).to(device) #modelo me ena extra layer gia to classification
-###
-training_arguments = TrainingArguments(
-    output_dir = "/storage/data2/up1072604/run", #pou tha apothikeytei to modelo
-    overwrite_output_dir = True,
-    eval_strategy = "epoch", #to evaluation ginetai sto telos kathe epoch
-    learning_rate=2e-5, #rythmos mathisis genika na einai mikros xoris akrotites. mikrh timh-> kalyterh genikeysh
-    per_device_train_batch_size=16,
-    per_device_eval_batch_size=64,
-    num_train_epochs=3, #genika de thelei oute poly liga alla oute polla.poses fores to modelo tha iterarei to training dataset-koinos se posa epochs tha ginei to training
-    weight_decay=0.01 #meiosh tou overfitting
-    #kapoia akoma orismata + fakelos
+###LoRa Config###
+lora_config = LoraConfig(
+    task_type=TaskType.SEQ_CLS, #Task type. We classify texts so sequence classification
+    r=7, #Common dimension between A and B matrices
+    lora_alpha=14, #Alpha hyperparameter -> usually 2*r
+    lora_dropout=0.1,
+    inference_mode = False,
+    target_modules=["query", "key","value"] #For BERT,RoBERTa,ALBERT,Distilroberta
+   #target_modules = ["q_lin","v_lin","k_lin"] #For DistilBERT
 )
+###MODEL###
+ground_truth = ['Benign','Anomaly']
+label2id = {label:id for id,label in enumerate(ground_truth)}
+id2label = {id:label for id,label in enumerate(ground_truth)}
 
-#########
-trainer = Trainer(
-    model=model, #modelo pou tha kanei to classification,
-    args=training_arguments, #ta orismata tis ekpaideyshs apo pano
-    #tokenizer=tokenizer#o tokenizer, an exo kanei hdh preprocessing-tokenizing LOGIKA den to xreiazomai
-    train_dataset= event_traces_train, #to synolo ekpaideyshs gia to fine-tuning
-    eval_dataset=event_traces_validation, #to synolo elegxou-aksiologisis gia to fine tuning-xoris ayto de tha aksiologithei h apodosi tou modelou mono tha ekpaideytei
-    #tokenizer=tokenizer
-    compute_metrics=compute_metrics #exei os apotelesma sto training tou modelou ektos apo to training/validation loss na emfanizontai kai oi times ton metrikon pou orisa sth synartisi kai epistrefontai apo ayth
+model = AutoModelForSequenceClassification.from_pretrained("roberta-base",num_labels=no_of_labels,id2label=id2label,label2id=label2id)
+#Encapsulate
+lora = get_peft_model(model,lora_config)
+###Feed model to CUDA##
+lora = lora.to(device)
+###Check###
+print("Lora model's number of labels:",lora.config.num_labels)
+print("Lora model's label2id:",lora.config.label2id)
+print("Lora model's id2label:",lora.config.id2label)
+
+###METRICS###
+
+accuracy = evaluate.load("accuracy")
+other_metrics = evaluate.combine(["precision","recall","f1"])
+confusion_matrix = evaluate.load("confusion_matrix")
+
+###Function to evaluate Metrics###
+def compute_metrics(eval_pred):
+  predictions, labels = eval_pred
+  predictions = np.argmax(predictions, axis=-1)
+  other_metrics_scores = other_metrics.compute(predictions=predictions,references=labels,average=None) #all classes
+  accuracy_score = accuracy.compute(predictions=predictions,references=labels)["accuracy"]
+  all_metrics = {"accuracy":accuracy_score} #initialization
+  for metric in other_metrics_scores: #appending
+    for entry_pos,entry in enumerate(other_metrics_scores[metric]):
+      all_metrics[f"{metric}_class_{entry_pos}"] = entry
+  return all_metrics
+#############################
+def compute_metrics_test(eval_pred):
+  predictions, labels = eval_pred
+  predictions = np.argmax(predictions, axis=-1)
+  matrix = confusion_matrix.compute(references=labels,predictions=predictions)['confusion_matrix']
+  matrix = pd.DataFrame(matrix,index=ground_truth,columns=ground_truth)
+  matrix.to_csv('/storage/data2/up1072604/saves/HDFS/roberta/HDFS_confusion.csv')
+  other_metrics_scores = other_metrics.compute(predictions=predictions,references=labels,average=None)
+  accuracy_score = accuracy.compute(predictions=predictions,references=labels)["accuracy"] 
+  all_metrics = {"accuracy":accuracy_score} #initialization
+  for metric in other_metrics_scores: #appending
+    for entry_pos,entry in enumerate(other_metrics_scores[metric]):
+      all_metrics[f"{metric}_class_{entry_pos}"] = entry
+  return all_metrics
+###FOCAL LOSS FUNCTION###
+class SparseCategoricalFocalLoss(nn.Module):
+  def __init__(self,gamma=2,alpha=None,reduction='mean'):
+    super().__init__() 
+    self.gamma = gamma
+    self.reduction = reduction
+    self.alpha = alpha
+  def forward(self,logits,labels):
+    self.alpha = self.alpha.to(device)
+    propabilities = F.softmax(logits,dim=-1) #propabilities(logits to probs with softmax)
+    #dimensions (batch,no_of_classes)-eg.(batch,2)
+    ##(batch,1)
+    labels = labels.view(-1,1)
+    #(batch,)
+    true_propabilities = propabilities.gather(1, labels).squeeze(1)
     #
-    )
-### Train the model
+    alpha_factor = self.alpha.gather(0,labels.view(-1))
+    #
+    loss = -alpha_factor * ((1-true_propabilities)**self.gamma) * torch.log(true_propabilities + 1e-8)
+    #
+    return loss.mean() if self.reduction == 'mean' else loss.sum()
+
+###TRAINER TO INCORPORATE CUSTOM LOSS FUNCTION###
+class ImbalancedTrainer(Trainer):
+	def __init__(self,*args,loss_fn=None,**kwargs):
+		super().__init__(*args,**kwargs)
+		self.loss_fn = SparseCategoricalFocalLoss(gamma=2,alpha=weights,reduction='mean')
+	def compute_loss(self,model,inputs,return_outputs=False,**kwargs):
+		labels = inputs.pop('labels') #Get ground truth(expected output)
+		outputs = model(**inputs)
+		logits = outputs.get('logits') #get the model's output(logits) for these inputs
+		#compute loss difference between logits and expected output
+		loss = self.loss_fn(logits,labels)
+		#
+		return (loss,outputs) if return_outputs else loss
+ 
+###Training arguments###
+training_arguments = TrainingArguments(
+    output_dir = '/storage/data2/up1072604/run', #Location where the fine tuned model's weights will be stored
+    overwrite_output_dir=True,  # When fine tuning starts overwrite the above directory
+    eval_strategy = "epoch", #Evaluation should be done at the end of each epoch
+    learning_rate=2e-5, #small learning rate -> better generalization
+    per_device_train_batch_size=16, #batch size for the training set
+    per_device_eval_batch_size=64, #batch size for evaluation
+    num_train_epochs=3, #epochs for the model to run
+    weight_decay=0.01, #Regularization to reduce overfitting
+    save_strategy= "no" #Don't save checkpoints
+)
+###Instantiate ImbalancedTrainer###
+trainer = ImbalancedTrainer(
+    model=lora, #The model
+    args=training_arguments, #Training arguments
+    train_dataset=event_traces_train, #Training set
+    eval_dataset=event_traces_validation, # validation to set on this the model will be evaluated at the end of each epoch
+    compute_metrics=compute_metrics #Evaluation function to run at each epoch
+   )
+###Train/Fine-tune the model###
 trainer.train()
-results = trainer.evaluate(eval_dataset=event_traces_test) #ti apodosi fernei to modelo sto test dataset
+###Change Evaluation function to calculate confusion matrix- Evaluation###
+trainer.compute_metrics = compute_metrics_test
+results = trainer.evaluate(eval_dataset=event_traces_test) #Evaluate on unseen test subset
 print(results)
 
+###Save the model###
+tokenizer.save_pretrained('/storage/data2/up1072604/saved_tokenizers/HDFS/roberta') #save the tokenizer
+model.config.save_pretrained('/storage/data2/up1072604/saved_models/HDFS/roberta') #save the base model's config such as id2label etc
+lora.save_pretrained('/storage/data2/up1072604/saved_models/HDFS/roberta') #Save the reduced matrices
