@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from transformers import AutoTokenizer, LongformerForSequenceClassification,Trainer,TrainingArguments,TrainingArguments,TrainerCallback
+from transformers import AutoTokenizer, LongformerForSequenceClassification, BigBirdForSequenceClassification,Trainer,TrainingArguments,TrainingArguments,TrainerCallback
 from peft import LoraConfig, TaskType, get_peft_model
 import torch
 import torch.nn as nn
@@ -8,6 +8,9 @@ import torch.nn.functional as F
 from sklearn.model_selection import train_test_split
 from datasets import Dataset
 import evaluate
+
+#################Big Bird or Longformer###############
+
 ###Get the graphics card###
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
@@ -62,8 +65,14 @@ print(weights)
 event_traces_train = Dataset.from_pandas(event_traces_train)
 event_traces_test = Dataset.from_pandas(event_traces_test)
 event_traces_validation = Dataset.from_pandas(event_traces_validation)
+
+
 ###tokenizer and relative function###
-tokenizer = AutoTokenizer.from_pretrained("allenai/longformer-base-4096") 
+tokenizer_name = "allenai/longformer-base-4096"
+# "google/bigbird-roberta-base"
+tokenizer = AutoTokenizer.from_pretrained(tokenizer_name) 
+
+###
 def tokenize_logs(entry):
   tokens = tokenizer(entry['Features'],padding='max_length',truncation=True)
   tokens['labels'] = entry['Label']
@@ -82,17 +91,20 @@ lora_config = LoraConfig(
     lora_alpha=14, #Alpha hyperparameter -> usually 2*r
     lora_dropout=0.1,
     inference_mode = False,
-    target_modules=["query", "key","value","query_global","key_global","value_global"] #For BERT,RoBERTa,ALBERT,Distilroberta(Global attention layers)
+    target_modules=["query", "key","value"] #For BERT,RoBERTa,ALBERT,Distilroberta,BigBird
+    #target_modules = ["query", "key","value","query_global","key_global","value_global"]
    #target_modules = ["q_lin","v_lin","k_lin"] #For DistilBERT
 )
 ###MODEL###
 ground_truth = ['Benign','Anomaly']
 label2id = {label:id for id,label in enumerate(ground_truth)}
 id2label = {id:label for id,label in enumerate(ground_truth)}
+#
 
-model = LongFormerForSequenceClassification.from_pretrained("allenai/longformer-base-4096",num_labels=no_of_labels,id2label=id2label,label2id=label2id)
+longformer = LongFormerForSequenceClassification.from_pretrained("allenai/longformer-base-4096",num_labels=no_of_labels,id2label=id2label,label2id=label2id)
+big_bird = BigBirdForSequenceClassification.from_pretrained("google/bigbird-roberta-base",num_labels=no_of_labels,id2label=id2label,label2id=label2id)
 #Encapsulate
-lora = get_peft_model(model,lora_config)
+lora = get_peft_model(longformer,lora_config)
 ###Feed model to CUDA##
 lora = lora.to(device)
 ###Check###
@@ -198,3 +210,7 @@ print(results)
 tokenizer.save_pretrained('/storage/data2/up1072604/saved_tokenizers/HDFS/longformer') #save the tokenizer
 model.config.save_pretrained('/storage/data2/up1072604/saved_models/HDFS/longformer') #save the base model's config such as id2label etc
 lora.save_pretrained('/storage/data2/up1072604/saved_models/HDFS/longformer') #Save the reduced matrices
+#########
+#tokenizer.save_pretrained('/storage/data2/up1072604/saved_tokenizers/HDFS/bigbird') #save the tokenizer
+#model.config.save_pretrained('/storage/data2/up1072604/saved_models/HDFS/bigbird') #save the base model's config such as id2label etc
+#lora.save_pretrained('/storage/data2/up1072604/saved_models/HDFS/bigbird') #Save the reduced matrices
