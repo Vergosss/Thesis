@@ -89,9 +89,14 @@ event_traces_test = Dataset.from_pandas(event_traces_test)
 
 explanations = []
 #attributions = []
+###############
+def prediction_function(text):
+    inputs = tokenizer(text) #returns input ids,attention_mask,input_type_ids,position_ids ->input embeddings
+    outputs = lora(inputs).logits #model logits
+    
 
 ##############PREDICTION FUNCTION#######################
-explainer = shap.Explainer(,tokenizer)
+explainer = shap.Explainer(prediction_function,tokenizer)
 shaps = explainer(event_traces_test)
 html = shaps.plot.text(shaps)
 with open('/storage/data2/up1072604/saves/explanations_shap.html','w') as file:
