@@ -91,6 +91,15 @@ weights = event_traces_train['Label'].value_counts(normalize=True)
 weights = torch.tensor([1/weights.loc[x] for x in sorted(list(weights.index))])
 print(weights)
 ##################
+
+'''
+OR ON THE WHOLE DATASET:
+event_traces['text'] = event_traces.apply(features_to_strings,axis=1)
+event_traces = Dataset.from_pandas(event_traces)
+'''
+
+
+
 ###Convert to Huggingface Dataset###
 event_traces_train = Dataset.from_pandas(event_traces_train)
 event_traces_test = Dataset.from_pandas(event_traces_test)
@@ -146,13 +155,7 @@ class ImbalancedTrainer(Trainer):
 training_arguments = TrainingArguments(
     output_dir = '/storage/data2/up1072604/run', #Location where the fine tuned model's weights will be stored
     overwrite_output_dir=True,  # When fine tuning starts overwrite the above directory
-    eval_strategy = "epoch", #Evaluation should be done at the end of each epoch
-    learning_rate=2e-5, #small learning rate -> better generalization
-    per_device_train_batch_size=16, #batch size for the training set
     per_device_eval_batch_size=64, #batch size for evaluation
-    num_train_epochs=3, #epochs for the model to run
-    weight_decay=0.01, #Regularization to reduce overfitting
-    save_strategy= "no" #Don't save checkpoints
 )
 ###Instantiate ImbalancedTrainer###
 trainer = ImbalancedTrainer(
