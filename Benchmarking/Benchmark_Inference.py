@@ -3,6 +3,7 @@ from peft import PeftModel, PeftConfig
 import torch
 import pandas as pd
 import numpy as np
+import time
 #
 ######################PER STEP LATENCIES/THROUGHPUTS ON A DISTRIBUTED SETUP############
 
@@ -10,7 +11,9 @@ latencies = []
 throughputs = []
 #
 class Benchmarking(TrainerCallback):
+    pass
 '''
+These are only for training/fine-tuning not for evaluation
     def on_epoch_begin(self,args,state,control,**kwargs):
         torch.cuda.synchronize()
         self.start_time = time.perf_counter()
@@ -40,15 +43,14 @@ class Benchmarking(TrainerCallback):
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 ###Load Saved tokenizer-model config- and lora weights###
-tokenizer = AutoTokenizer.from_pretrained('/storage/data2/up1072604/saved_tokenizers/HDFS/roberta')
+tokenizer = AutoTokenizer.from_pretrained('/storage/data2/up1072604/saved_tokenizers/HDFS/distilbert')
 
-tokenizer = CustomTokenizer(tokenizer)
 ###Load Model config and adapter weights###
 
-config = AutoConfig.from_pretrained("/storage/data2/up1072604/saved_models/HDFS/roberta")
-model = AutoModelForSequenceClassification.from_pretrained('roberta-base',config=config)
+config = AutoConfig.from_pretrained("/storage/data2/up1072604/saved_models/HDFS/distilbert")
+model = AutoModelForSequenceClassification.from_pretrained('distilbert-base-uncased',config=config)
 #
-lora = PeftModel.from_pretrained(model,'/storage/data2/up1072604/saved_models/HDFS/roberta')
+lora = PeftModel.from_pretrained(model,'/storage/data2/up1072604/saved_models/HDFS/distilbert')
 lora = lora.merge_and_unload()
 lora = lora.to(device)
 ##
@@ -77,6 +79,7 @@ event_dictionary = dict(zip(log_templates['EventId'],log_templates['EventTemplat
 def features_to_strings(entry):
   return " ".join([event_dictionary.get(eventID) for eventID in entry['text'].replace('[','').replace(']','').split(',')])
 ##
+#Print a trace i.e a vector of events
 print(event_traces.sample(1))
 
 ######################
@@ -87,7 +90,7 @@ weights = event_traces['Label'].value_counts(normalize=True) #same as if i had s
 weights = torch.tensor([1/weights.loc[x] for x in sorted(list(weights.index))])
 print(weights)
 ##################
-
+#Create text from vector -> convert to dataset -> tokenize texts
 event_traces['text'] = event_traces.apply(features_to_strings,axis=1)
 event_traces = Dataset.from_pandas(event_traces)
 event_traces = event_traces.map(tokenize_logs,batched=True)
@@ -139,6 +142,7 @@ training_arguments = TrainingArguments(
 trainer = ImbalancedTrainer(
     model=lora, #The model
     args=training_arguments, #Training arguments
+    compute_metrics=None,
     callbacks = [Benchmarking()]
  )
 
@@ -146,13 +150,16 @@ trainer = ImbalancedTrainer(
 latencies = []
 torch.cuda.synchronize() #leftover gpu work from earlier
 start = time.perf_counter()
+#SINCE WE ARE EVALUATING BENCHMARKS NO ACCURACY,PRECISION,RECALL METRICS ARE COMPUTED. BENCHMARKS ARE
+#EVALUATED ON THE WHOLE DATASET AS A CEILING FOR THIS PROBLEM. SINCE IT IS BENCHMARKING IT DOESNT
+#MATTER THAT THE MODEL HAS ALREAD SEEN SOME OF THE DATA IT DOES NOT AFFECT THE SPEED, LATENCY,THROUGHPUT OF THE MODEL
 eval_results = trainer.evaluate(eval_dataset=event_traces)
 torch.cuda.synchronize()
-print(f'WALL CLOCK INFERENCE/EVALUATION TIME :{time.perf_counter() - start:.2f}') #### STOP COUNTING AFTER EVALUATION
-print(f'Global Latency(Trainer): {results.metrics['eval_runtime']:.2f}')
-print(f'Global Throughput defined as N_samples/time it took for these samples: {len(event_traces)/results.metrics['eval_runtime']:.2f}')
-print(f'Global Throughput(Trainer): {results.metrics['eval_samples_per_second']:.2f}')
+if trainer.is_world_process_zero():
+    print(f'WALL CLOCK INFERENCE/EVALUATION TIME :{time.perf_counter() - start:.2f}') #### STOP COUNTING AFTER EVALUATION
+    print(f"Global Latency(Trainer): {eval_results.metrics['eval_runtime']:.2f}")
+    print(f"Global Throughput defined as N_samples/time{len(event_traces)} it took for these samples: {len(event_traces)/eval_results.metrics['eval_runtime']:.2f}")
+    print(f"Global Throughput(Trainer): {eval_results.metrics['eval_samples_per_second']:.2f}")
 
 ##
-input('WAIT')
-######AVERAGE STEP METRICS##############
+######AVERAGE STEP METRICS OTHER FILE##############
