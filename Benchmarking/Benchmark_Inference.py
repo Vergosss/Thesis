@@ -4,15 +4,15 @@ import torch
 import pandas as pd
 import numpy as np
 import time
+import math
 #
 ######################PER STEP LATENCIES/THROUGHPUTS ON A DISTRIBUTED SETUP############
 
-latencies = []
-throughputs = []
-#
+
+'''
 class Benchmarking(TrainerCallback):
     pass
-'''
+
 These are only for training/fine-tuning not for evaluation
     def on_epoch_begin(self,args,state,control,**kwargs):
         torch.cuda.synchronize()
@@ -59,7 +59,7 @@ print(lora.config.label2id)
 print('Num labels:',lora.config.num_labels)
 ##
 lora.eval() ###Evaluation mode since we are running inference
-
+###Not really need since After we previously fine-tuned with lora the config it saves has already inference_mode=True
 ##########Load Data##########
 
 event_traces = pd.read_csv('/storage/data2/up1072604/data/Event_traces.csv',usecols=['BlockId','Label','Features'])
@@ -79,6 +79,14 @@ event_dictionary = dict(zip(log_templates['EventId'],log_templates['EventTemplat
 def features_to_strings(entry):
   return " ".join([event_dictionary.get(eventID) for eventID in entry['text'].replace('[','').replace(']','').split(',')])
 ##
+
+####Tokenizing function###
+def tokenize_logs(entry):
+  tokens = tokenizer(entry['text'],padding='max_length',truncation=True)
+  tokens['labels'] = entry['label']
+  return tokens
+
+
 #Print a trace i.e a vector of events
 print(event_traces.sample(1))
 
@@ -136,18 +144,16 @@ class ImbalancedTrainer(Trainer):
 training_arguments = TrainingArguments(
     output_dir = '/storage/data2/up1072604/run', #Location where the fine tuned model's weights will be stored
     overwrite_output_dir=True,  # When fine tuning starts overwrite the above directory
-    per_device_eval_batch_size=64, #batch size for evaluation
+    per_device_eval_batch_size=128, #batch size for evaluation
 )
 ###Instantiate ImbalancedTrainer###
 trainer = ImbalancedTrainer(
     model=lora, #The model
     args=training_arguments, #Training arguments
     compute_metrics=None,
-    callbacks = [Benchmarking()]
  )
 
 ###########################--------INFERENCE/EVALUATING ON THE WHOLE  SET ##########
-latencies = []
 torch.cuda.synchronize() #leftover gpu work from earlier
 start = time.perf_counter()
 #SINCE WE ARE EVALUATING BENCHMARKS NO ACCURACY,PRECISION,RECALL METRICS ARE COMPUTED. BENCHMARKS ARE
@@ -156,10 +162,17 @@ start = time.perf_counter()
 eval_results = trainer.evaluate(eval_dataset=event_traces)
 torch.cuda.synchronize()
 if trainer.is_world_process_zero():
+    ###################################SANITY CHECK################
+    print(f"Number of GPUs: {trainer.args.world_size}, Batch size per gpu: {trainer.args.per_device_eval_batch_size}, Number of global steps: {len(trainer.get_eval_dataloader(event_traces))} vs Manually computed : {math.ceil(len(event_traces)/(trainer.args.world_size*trainer.args.per_device_eval_batch_size))}")
+    #####################################GLOBAL BENCHMARKS(WALL CLOCK TIMES
     print(f'WALL CLOCK INFERENCE/EVALUATION TIME :{time.perf_counter() - start:.2f}') #### STOP COUNTING AFTER EVALUATION
     print(f"Global Latency(Trainer): {eval_results.metrics['eval_runtime']:.2f}")
-    print(f"Global Throughput defined as N_samples/time{len(event_traces)} it took for these samples: {len(event_traces)/eval_results.metrics['eval_runtime']:.2f}")
+    print(f"Global Throughput defined as N_samples/time {len(event_traces)} samples it took for these samples: {len(event_traces)/eval_results.metrics['eval_runtime']:.2f}")
     print(f"Global Throughput(Trainer): {eval_results.metrics['eval_samples_per_second']:.2f}")
+    ######AVERAGE STEP METRICS##############
+    ##########For these N steps it took total wall clock time to process them.
+    #########Total steps
+    print(f"Average Step Latency(Total time divided by number of steps): {eval_results.metrics['eval_runtime']/math.ceil(len(event_traces)/(trainer.args.world_size*trainer.args.per_device_eval_batch_size)):.2f}")
+    ###SANITY CHECK################
+    print(f"Average Step Latency(Total time divided by number of steps): {eval_results.metrics['eval_runtime']/len(trainer.get_eval_dataloader(event_traces)):.2f}")
 
-##
-######AVERAGE STEP METRICS OTHER FILE##############
