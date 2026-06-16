@@ -12,16 +12,16 @@ num_gpus= torch.cuda.device_count()
 print('GPUs:',num_gpus)
 #
 ######################PER STEP LATENCIES/THROUGHPUTS ON A DISTRIBUTED SETUP############
-event_traces = load_from_disk('/storage/data2/up1072604/data/tokenized_dataset')
+sequences = load_from_disk('/storage/data2/up1072604/data/tokenized_IoT23_multi')
 ###Load Saved tokenizer-model config- and lora weights###
 
 ###Load Model config and adapter weights###
 
-config = AutoConfig.from_pretrained("/storage/data2/up1072604/saved_models/HDFS/distilbert")
+config = AutoConfig.from_pretrained("/storage/data2/up1072604/saved_models/IoT23/multi")
 model = AutoModelForSequenceClassification.from_pretrained('distilbert-base-uncased',config=config)
 #
 
-lora = PeftModel.from_pretrained(model,'/storage/data2/up1072604/saved_models/HDFS/distilbert')
+lora = PeftModel.from_pretrained(model,'/storage/data2/up1072604/saved_models/IoT23/multi')
 lora = lora.merge_and_unload()
 '''
 print('RANKS',os.environ["RANK"])
@@ -74,21 +74,21 @@ start = time.perf_counter()
 #SINCE WE ARE EVALUATING BENCHMARKS NO ACCURACY,PRECISION,RECALL METRICS ARE COMPUTED. BENCHMARKS ARE
 #EVALUATED ON THE WHOLE DATASET AS A CEILING FOR THIS PROBLEM. SINCE IT IS BENCHMARKING IT DOESNT
 #MATTER THAT THE MODEL HAS ALREAD SEEN SOME OF THE DATA IT DOES NOT AFFECT THE SPEED, LATENCY,THROUGHPUT OF THE MODEL
-eval_results = trainer.evaluate(eval_dataset=event_traces)
+eval_results = trainer.evaluate(eval_dataset=sequences)
 torch.cuda.synchronize()
 if trainer.is_world_process_zero():
     ###################################SANITY CHECK################
-    print(f"Dataset length: {len(event_traces)}")
-    print(f"Number of processes: {trainer.args.world_size}, Number of GPUs: {num_gpus} ,Batch size per gpu: {trainer.args.per_device_eval_batch_size}, Number of global steps: {len(trainer.get_eval_dataloader(event_traces))} vs Manually computed : {math.ceil(len(event_traces)/(num_gpus*trainer.args.per_device_eval_batch_size))}")
+    print(f"Dataset length: {len(sequences)}")
+    print(f"Number of processes: {trainer.args.world_size}, Number of GPUs: {num_gpus} ,Batch size per gpu: {trainer.args.per_device_eval_batch_size}, Number of global steps: {len(trainer.get_eval_dataloader(sequences))} vs Manually computed : {math.ceil(len(sequences)/(num_gpus*trainer.args.per_device_eval_batch_size))}")
     #####################################GLOBAL BENCHMARKS(WALL CLOCK TIMES
     print(f'WALL CLOCK INFERENCE/EVALUATION TIME :{time.perf_counter() - start:.2f}') #### STOP COUNTING AFTER EVALUATION
     print(f"Global Latency(Trainer): {eval_results['eval_runtime']:.2f}")
-    print(f"Global Throughput defined as N_samples/time {len(event_traces)} samples it took for these samples: {len(event_traces)/eval_results['eval_runtime']:.2f}")
+    print(f"Global Throughput defined as N_samples/time {len(sequences)} samples it took for these samples: {len(sequences)/eval_results['eval_runtime']:.2f}")
     print(f"Global Throughput(Trainer): {eval_results['eval_samples_per_second']:.2f}")
     ######AVERAGE STEP METRICS##############
     ##########For these N steps it took total wall clock time to process them.
     #########Total steps
-    print(f"Average Step Latency(Total time divided by number of steps): {eval_results['eval_runtime']/math.ceil(len(event_traces)/(num_gpus*trainer.args.per_device_eval_batch_size)):.2f}")
+    print(f"Average Step Latency(Total time divided by number of steps): {eval_results['eval_runtime']/math.ceil(len(sequences)/(num_gpus*trainer.args.per_device_eval_batch_size)):.2f}")
     ###SANITY CHECK################
-    print(f"Average Step Latency(Total time divided by number of steps): {eval_results['eval_runtime']/len(trainer.get_eval_dataloader(event_traces)):.2f}")
+    print(f"Average Step Latency(Total time divided by number of steps): {eval_results['eval_runtime']/len(trainer.get_eval_dataloader(sequences)):.2f}")
 
