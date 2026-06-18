@@ -5,84 +5,39 @@ from peft import LoraConfig, TaskType, get_peft_model
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from sklearn.model_selection import train_test_split
 from datasets import Dataset
 import evaluate
-
+from collections import Counter
 #################Big Bird or Longformer###############
 
 ###Get the graphics card###
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
-###Load event vectors/blocks###
-event_traces = pd.read_csv('/storage/data2/up1072604/data/Event_traces.csv',usecols=['BlockId','Label','Features'])
-event_traces['Label'] = event_traces['Label'].map({'Success':0,'Fail':1})
-###Get the templates to match with###
-log_templates = pd.read_csv('/storage/data2/up1072604/data/HDFS.log_templates.csv')
-
-###Dictionary of EventIds-Event text###
-event_dictionary = dict(zip(log_templates['EventId'],log_templates['EventTemplate']))
-
-print(event_dictionary)
-
-###Information-Dimensions-Overall Description###
-event_traces.info()
-print(event_traces.shape) 
-print(event_traces.describe())
-#
-###Convert feature event vector to text seperated with space ###
-def features_to_strings(entry):
-  return " ".join([event_dictionary.get(eventID) for eventID in entry['Features'].replace('[','').replace(']','').split(',')])
-
-print('Class distribution of Labels: ',event_traces['Label'].value_counts())
-###Drop Unnecessary columns###
-event_traces.drop(columns=['BlockId'],inplace=True) #drop the block id
-###Make sure labels are integers not floats###
-event_traces['Label'] = event_traces['Label'].astype(int)
-
-###Train test dev split###
-event_traces_train,event_traces_test = train_test_split(event_traces,test_size=0.1,random_state=42,stratify=event_traces['Label'],shuffle=True)
-event_traces_train,event_traces_validation = train_test_split(event_traces_train,test_size=0.1111,stratify=event_traces_train['Label'],random_state=42,shuffle=True)
+################LOAD DATA###############
+event_traces_train = load_from_disk('/storage/data2/up1072604/data/tokenized_HDFS_train')
+event_traces_validation = load_from_disk('/storage/data2/up1072604/data/tokenized_HDFS_validation')
+event_traces_test = load_from_disk('/storage/data2/up1072604/data/tokenized_HDFS_test')
+##Describe the Dataset###
+print('Event traces train huggingface dataset:',event_traces_train)
 ###Verify Distribution of Labels in subsets###
-print('Class distribution train: ',event_traces_train['Label'].value_counts())
-print('Class distribution validation: ',event_traces_validation['Label'].value_counts())
-print('Class distribution test: ',event_traces_test['Label'].value_counts())
-###Apply on each row of the dataset###
-event_traces_train['Features'] = event_traces_train.apply(features_to_strings,axis=1)
-event_traces_validation['Features'] = event_traces_validation.apply(features_to_strings,axis=1)
-event_traces_test['Features'] = event_traces_test.apply(features_to_strings,axis=1)
+
+
 ###A Random Sample of train subset to verify everything is ok###
-print(event_traces_train.sample(1))
+print(event_traces_train.shuffle(seed=42).select(range(1)))
 
 ###Number of distinct labels in dataset###
-no_of_labels = int(event_traces['Label'].nunique())
+counter = Counter(event_traces_train['labels'])
+no_of_labels = int(len(counter))
+print('No of labels:',no_of_labels)
 ###Calculate class weights with the inverse class frequency(inverse of each class percentage in the train dataset)##
-weights = event_traces_train['Label'].value_counts(normalize=True)
-weights = torch.tensor([1/weights.loc[x] for x in sorted(list(weights.index))])
-print(weights)
 
-###Convert to Huggingface Dataset###
-event_traces_train = Dataset.from_pandas(event_traces_train)
-event_traces_test = Dataset.from_pandas(event_traces_test)
-event_traces_validation = Dataset.from_pandas(event_traces_validation)
+weights = torch.tensor(counter[x]/counter.total() for x in sorted(list(counter.keys()))) #simpler: for x in sorted(list(counter))
+print('Weights vector:',weights)
 
 
 ###tokenizer and relative function###
 tokenizer_name = "allenai/longformer-base-4096"
 # "google/bigbird-roberta-base"
-tokenizer = AutoTokenizer.from_pretrained(tokenizer_name) 
-
-###
-def tokenize_logs(entry):
-  tokens = tokenizer(entry['Features'],padding='max_length',truncation=True)
-  tokens['labels'] = entry['Label']
-  return tokens
-
-###Tokenizing###
-event_traces_train = event_traces_train.map(tokenize_logs,batched=True)
-event_traces_test = event_traces_test.map(tokenize_logs,batched=True)
-event_traces_validation = event_traces_validation.map(tokenize_logs,batched=True)
-####################
 
 ###LoRa Config###
 lora_config = LoraConfig(
@@ -91,8 +46,8 @@ lora_config = LoraConfig(
     lora_alpha=14, #Alpha hyperparameter -> usually 2*r
     lora_dropout=0.1,
     inference_mode = False,
-    target_modules=["query", "key","value"] #For BERT,RoBERTa,ALBERT,Distilroberta,BigBird
-    #target_modules = ["query", "key","value","query_global","key_global","value_global"]
+    #target_modules=["query", "key","value"] #For BERT,RoBERTa,ALBERT,Distilroberta,BigBird
+    target_modules = ["query", "key","value","query_global","key_global","value_global"] # for BigBird, Longformer
    #target_modules = ["q_lin","v_lin","k_lin"] #For DistilBERT
 )
 ###MODEL###
@@ -102,7 +57,7 @@ id2label = {id:label for id,label in enumerate(ground_truth)}
 #
 
 longformer = LongFormerForSequenceClassification.from_pretrained("allenai/longformer-base-4096",num_labels=no_of_labels,id2label=id2label,label2id=label2id)
-big_bird = BigBirdForSequenceClassification.from_pretrained("google/bigbird-roberta-base",num_labels=no_of_labels,id2label=id2label,label2id=label2id)
+#big_bird = BigBirdForSequenceClassification.from_pretrained("google/bigbird-roberta-base",num_labels=no_of_labels,id2label=id2label,label2id=label2id)
 #Encapsulate
 lora = get_peft_model(longformer,lora_config)
 ###Feed model to CUDA##
@@ -135,7 +90,7 @@ def compute_metrics_test(eval_pred):
   predictions = np.argmax(predictions, axis=-1)
   matrix = confusion_matrix.compute(references=labels,predictions=predictions)['confusion_matrix']
   matrix = pd.DataFrame(matrix,index=ground_truth,columns=ground_truth)
-  matrix.to_csv('/storage/data2/up1072604/saves/HDFS/roberta/HDFS_confusion.csv')
+  matrix.to_csv('/storage/data2/up1072604/saves/HDFS/longformer/longformer_confusion.csv')
   other_metrics_scores = other_metrics.compute(predictions=predictions,references=labels,average=None)
   accuracy_score = accuracy.compute(predictions=predictions,references=labels)["accuracy"] 
   all_metrics = {"accuracy":accuracy_score} #initialization

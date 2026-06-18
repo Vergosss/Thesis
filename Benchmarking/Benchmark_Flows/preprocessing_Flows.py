@@ -32,6 +32,7 @@ def tokenize_logs(entry):
 sequences= sequences.map(tokenize_logs,batched=True)
 print(sequences.sample(1))
 sequences.save_to_disk('/storage/data2/up1072604/data/tokenized_IoT23_multi')
+#Support for benchmarking preprocessing
 end = time.perf_counter()
 print(f'Time for preprocessing (Data Loading,conversion,tokenizing and saving) - Preprocessing Latency: {start-end:.2f}') 
 print(f'How many samples per second can this pipeline handle - Preprocessing Throughput: {len(sequences)/(start-end):.2f}')

@@ -2,6 +2,10 @@ import pandas as pd
 from datasets import Dataset
 from transformers import AutoTokenizer
 import time
+import sys
+#
+Processes = int(sys.argv[1])
+print(f'Number of Processes: {Processes}')
 #
 start = time.perf_counter()
 #
@@ -37,8 +41,8 @@ print(event_traces.sample(1))
 event_traces['text'] = event_traces.apply(features_to_strings,axis=1)
 print(event_traces.sample(1))
 event_traces = Dataset.from_pandas(event_traces)
-event_traces = event_traces.map(tokenize_logs,batched=True)
-event_traces.save_to_disk('/storage/data2/up1072604/data/tokenized_test')
+event_traces = event_traces.map(tokenize_logs,batched=True,num_proc=Processes,load_from_cache_file=False)
+event_traces.save_to_disk(f'/storage/data2/up1072604/data/tokenized_HDFS_{Processes}_Processes')
 end = time.perf_counter()
 print(f'Time for preprocessing (Data Loading,conversion,tokenizing and saving) - Preprocessing Latency: {start-end:.2f}') 
 print(f'How many samples per second can this pipeline handle - Preprocessing Throughput: {len(event_traces)/(start-end):.2f}')
