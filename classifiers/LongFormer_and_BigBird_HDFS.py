@@ -31,7 +31,7 @@ no_of_labels = int(len(counter))
 print('No of labels:',no_of_labels)
 ###Calculate class weights with the inverse class frequency(inverse of each class percentage in the train dataset)##
 
-weights = torch.tensor(counter[x]/counter.total() for x in sorted(list(counter.keys()))) #simpler: for x in sorted(list(counter))
+weights = torch.tensor([counter.total()/counter[x] for x in sorted(list(counter.keys()))]) #simpler: for x in sorted(list(counter)) #it is 1/counter[x]/counter.total()
 print('Weights vector:',weights)
 
 
@@ -154,6 +154,7 @@ trainer = ImbalancedTrainer(
     eval_dataset=event_traces_validation, # validation to set on this the model will be evaluated at the end of each epoch
     compute_metrics=compute_metrics #Evaluation function to run at each epoch
    )
+input('WAIT')
 ###Train/Fine-tune the model###
 trainer.train()
 ###Change Evaluation function to calculate confusion matrix- Evaluation###
