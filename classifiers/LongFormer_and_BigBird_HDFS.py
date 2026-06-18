@@ -1,29 +1,31 @@
 import pandas as pd
 import numpy as np
-from transformers import AutoTokenizer, LongformerForSequenceClassification, BigBirdForSequenceClassification,Trainer,TrainingArguments,TrainingArguments,TrainerCallback
+from transformers import AutoTokenizer, LongformerForSequenceClassification, BigBirdForSequenceClassification,Trainer,TrainingArguments,TrainingArguments,TrainerCallback,DataCollatorWithPadding
 from peft import LoraConfig, TaskType, get_peft_model
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from datasets import Dataset
+from datasets import Dataset,load_from_disk
 import evaluate
 from collections import Counter
-#################Big Bird or Longformer###############
-
+#################Big Bird or Longformer-Tokenizer and Collator###############
+tokenizer_name = "allenai/longformer-base-4096"
+tokenizer = AutoTokenizer.from_pretrained(tokenizer_name,max_length=4096)
+collator = DataCollatorWithPadding(tokenizer)
 ###Get the graphics card###
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
 ################LOAD DATA###############
-event_traces_train = load_from_disk('/storage/data2/up1072604/data/tokenized_HDFS_train')
-event_traces_validation = load_from_disk('/storage/data2/up1072604/data/tokenized_HDFS_validation')
-event_traces_test = load_from_disk('/storage/data2/up1072604/data/tokenized_HDFS_test')
+event_traces_train = load_from_disk('/storage/data2/up1072604/data/tokenized_HDFS_train_longformer')
+event_traces_validation = load_from_disk('/storage/data2/up1072604/data/tokenized_HDFS_validation_longformer')
+event_traces_test = load_from_disk('/storage/data2/up1072604/data/tokenized_HDFS_test_longformer')
 ##Describe the Dataset###
 print('Event traces train huggingface dataset:',event_traces_train)
 ###Verify Distribution of Labels in subsets###
 
 
 ###A Random Sample of train subset to verify everything is ok###
-print(event_traces_train.shuffle(seed=42).select(range(1)))
+print('Random train sample',event_traces_train.shuffle(seed=42).select(range(1)))
 
 ###Number of distinct labels in dataset###
 counter = Counter(event_traces_train['labels'])
@@ -34,7 +36,7 @@ print('No of labels:',no_of_labels)
 weights = torch.tensor([counter.total()/counter[x] for x in sorted(list(counter.keys()))]) #simpler: for x in sorted(list(counter)) #it is 1/counter[x]/counter.total()
 print('Weights vector:',weights)
 
-
+input('WAIT')
 ###tokenizer and relative function###
 tokenizer_name = "allenai/longformer-base-4096"
 # "google/bigbird-roberta-base"
@@ -47,7 +49,7 @@ lora_config = LoraConfig(
     lora_dropout=0.1,
     inference_mode = False,
     #target_modules=["query", "key","value"] #For BERT,RoBERTa,ALBERT,Distilroberta,BigBird
-    target_modules = ["query", "key","value","query_global","key_global","value_global"] # for BigBird, Longformer
+    target_modules = ["query", "key","value","query_global","key_global","value_global"] # for , Longformer only
    #target_modules = ["q_lin","v_lin","k_lin"] #For DistilBERT
 )
 ###MODEL###
@@ -56,7 +58,8 @@ label2id = {label:id for id,label in enumerate(ground_truth)}
 id2label = {id:label for id,label in enumerate(ground_truth)}
 #
 
-longformer = LongFormerForSequenceClassification.from_pretrained("allenai/longformer-base-4096",num_labels=no_of_labels,id2label=id2label,label2id=label2id)
+longformer = LongformerForSequenceClassification.from_pretrained("allenai/longformer-base-4096",num_labels=no_of_labels,id2label=id2label,label2id=label2id,gradient_checkpointing=False)
+print('Longformer sliding window: ',longformer.config.attention_window)
 #big_bird = BigBirdForSequenceClassification.from_pretrained("google/bigbird-roberta-base",num_labels=no_of_labels,id2label=id2label,label2id=label2id)
 #Encapsulate
 lora = get_peft_model(longformer,lora_config)
@@ -144,7 +147,9 @@ training_arguments = TrainingArguments(
     per_device_eval_batch_size=64, #batch size for evaluation
     num_train_epochs=3, #epochs for the model to run
     weight_decay=0.01, #Regularization to reduce overfitting
-    save_strategy= "no" #Don't save checkpoints
+    save_strategy= "no", #Don't save checkpoints
+    gradient_checkpointing=False,
+    bf16=True,
 )
 ###Instantiate ImbalancedTrainer###
 trainer = ImbalancedTrainer(
@@ -152,7 +157,9 @@ trainer = ImbalancedTrainer(
     args=training_arguments, #Training arguments
     train_dataset=event_traces_train, #Training set
     eval_dataset=event_traces_validation, # validation to set on this the model will be evaluated at the end of each epoch
-    compute_metrics=compute_metrics #Evaluation function to run at each epoch
+    compute_metrics=compute_metrics, #Evaluation function to run at each epoch
+    tokenizer=tokenizer,
+    data_collator=collator
    )
 input('WAIT')
 ###Train/Fine-tune the model###

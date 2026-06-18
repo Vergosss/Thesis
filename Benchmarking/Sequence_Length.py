@@ -37,9 +37,9 @@ def features_to_strings(entry):
 
 	####Tokenizing function###
 def tokenize_logs(entry):
-    tokens = tokenizer(entry['text'],truncation=True,max_length=4096,padding=False) #basically dont pad let the datacollator do the paddding
-  	tokens['labels'] = entry['label']
-  	return tokens
+  	tokens = tokenizer(entry['text'],truncation=False,max_length=4096,return_length=True)
+  	#tokens['labels'] = entry['label']
+  	return {"length": [len(text) for text in tokens["input_ids"]]}
 
 ##################
 
@@ -56,13 +56,35 @@ event_traces_test['text'] = event_traces_test.apply(features_to_strings,axis=1)
 
 print(event_traces_train.sample(1))
 ####
-
+input('WAIT')
 ###Convert to Huggingface Dataset###
 event_traces_train = Dataset.from_pandas(event_traces_train)
 event_traces_validation = Dataset.from_pandas(event_traces_validation)
 event_traces_test = Dataset.from_pandas(event_traces_test)
 
+##Check sequence lengths###
+event_traces_train = event_traces_train.map(tokenize_logs,batched=True,num_proc=Processes,load_from_cache_file=False)
+event_traces_validation = event_traces_validation.map(tokenize_logs,batched=True,num_proc=Processes,load_from_cache_file=False)
+event_traces_test = event_traces_test.map(tokenize_logs,batched=True,num_proc=Processes,load_from_cache_file=False)
+###########
+len_train = event_traces_train["length"]
+len_validation = event_traces_validation["length"]
+len_test = event_traces_test["length"]
 #
+print('Train max length:',max(len_train))
+print('Eval max length:',max(len_validation))
+print('Test max length:',max(len_test))
+#
+print("p95_train:", np.percentile(len_train, 95))
+print("p99_train:", np.percentile(len_train, 99))
+#
+print("p95_validation:", np.percentile(len_validation, 95))
+print("p99_validation:", np.percentile(len_validation, 99))
+#
+print("p95_test:", np.percentile(len_test, 95))
+print("p99_test:", np.percentile(len_test, 99))
+###Tokenizing###
+input('WAIT')
 event_traces_train = event_traces_train.map(tokenize_logs,batched=True,num_proc=Processes,load_from_cache_file=False)
 event_traces_validation = event_traces_validation.map(tokenize_logs,batched=True,num_proc=Processes,load_from_cache_file=False)
 event_traces_test = event_traces_test.map(tokenize_logs,batched=True,num_proc=Processes,load_from_cache_file=False)
@@ -70,7 +92,7 @@ event_traces_test = event_traces_test.map(tokenize_logs,batched=True,num_proc=Pr
 ####Save to Disk for reuse############
 event_traces_train.save_to_disk(f'/storage/data2/up1072604/data/tokenized_HDFS_train_longformer')
 event_traces_validation.save_to_disk(f'/storage/data2/up1072604/data/tokenized_HDFS_validation_longformer')
-event_traces_test.save_to_disk(f'/storage/data2/up1072604/data/tokenized_HDFS_test_longformer')
+event_traces_test.save_to_disk(f'/storage/data2/up1072604/data/tokenized_HDFS_test_longfomer')
 ####
 end = time.perf_counter()
 print(f'Time for preprocessing (Data Loading,conversion,tokenizing and saving) - Preprocessing Latency: {start-end:.2f}') 
