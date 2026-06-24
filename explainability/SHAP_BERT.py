@@ -1,43 +1,13 @@
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoConfig
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoConfig,pipeline
 from peft import PeftModel, PeftConfig
 import pandas as pd
 import numpy as np
 import torch
 import shap
-import torch.nn.functional as F
 
-from sklearn.model_selection import train_test_split
 ###
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-###
-class CustomTokenizer:
-    def __init__(self, tokenizer, max_length=512):
-        self.tokenizer = tokenizer
-        self.max_length = max_length
 
-    def __call__(self,text, *args, **kwargs):
-        kwargs["truncation"] = True
-        #kwargs["padding"] =  "max_length"
-        kwargs["max_length"] =  self.max_length
-        return self.tokenizer(text,*args, **kwargs)
-    def encode(self, text, *args, **kwargs):
-        kwargs["truncation"] = True
-        kwargs["max_length"] = self.max_length
-        return self.tokenizer.encode(text, *args, **kwargs)
-
-    def encode_plus(self, text, *args, **kwargs):
-        kwargs["truncation"] = True
-        kwargs["max_length"] = self.max_length
-        return self.tokenizer.encode_plus(text, *args, **kwargs)
-
-    def batch_encode_plus(self, batch_texts, *args, **kwargs):
-        kwargs["truncation"] = True
-        kwargs["max_length"] = self.max_length
-        return self.tokenizer.batch_encode_plus(batch_texts, *args, **kwargs)
-    def decode(self, *args, **kwargs):
-        return self.tokenizer.decode(*args, **kwargs)
-    def __getattr__(self, name):
-        return getattr(self.tokenizer, name)
 ###
 config = AutoConfig.from_pretrained("/storage/data2/up1072604/saved_models/HDFS/distilbert")
 model = AutoModelForSequenceClassification.from_pretrained('distilbert-base-uncased',config=config)
@@ -54,57 +24,47 @@ print(lora.config.label2id)
 print('Num labels:',lora.config.num_labels)
 lora.eval()
 ###
-event_traces = pd.read_csv('/storage/data2/up1072604/data/Event_traces.csv',usecols=['BlockId','Label','Features'])
-event_traces['Label'] = event_traces['Label'].map({'Success':0,'Fail':1})
-###Get the templates to match with###
-log_templates = pd.read_csv('/storage/data2/up1072604/data/HDFS.log_templates.csv')
-###Drop Block Id###
-event_traces.drop(columns=['BlockId'],inplace=True) #drop the block id
-###
-event_traces.rename(columns={'Features':'text','Label':'label'}, inplace=True) ###rename features to text
-event_traces.info()
-###Dictionary of EventIds-Event text###
-event_dictionary = dict(zip(log_templates['EventId'],log_templates['EventTemplate']))
-###Train-val-test split- Get the test set the same set from training script by setting same random state###
-event_traces_train,event_traces_test = train_test_split(event_traces,test_size=0.1,stratify=event_traces['label'],random_state=42,shuffle=True)
-event_traces_train,event_traces_validation = train_test_split(event_traces_train,test_size=0.1111,stratify=event_traces_train['label'],random_state=42,shuffle=True)
-###Sample from the test set###
-###Apply on each row of the dataset###
-def features_to_strings(entry):
-  return " ".join([event_dictionary.get(eventID) for eventID in entry['text'].replace('[','').replace(']','').split(',')])
-##
-event_traces_train['text'] = event_traces_train.apply(features_to_strings,axis=1)
-event_traces_validation['text'] = event_traces_validation.apply(features_to_strings,axis=1)
-event_traces_test['text'] = event_traces_test.apply(features_to_strings,axis=1)
-print(event_traces_train.sample(1))
+event_traces_train = load_from_disk('/storage/data2/up1072604/data/tokenized_HDFS_train_distilbert')
+event_traces_validation = load_from_disk('/storage/data2/up1072604/data/tokenized_HDFS_validation_distilbert')
+event_traces_test = load_from_disk('/storage/data2/up1072604/data/tokenized_HDFS_test_distilbert')
+
 ###Subsample for display###
-event_traces_test_1 = event_traces_test[event_traces_test['label'] == 1].sample(n=5,random_state=42)
-event_traces_test_0 = event_traces_test[event_traces_test['label'] == 0].sample(n=5,random_state=42)
-event_traces_test = pd.concat([event_traces_test_0,event_traces_test_1])
-###Shuffle###
-event_traces_test = event_traces_test.sample(frac=1,random_state=42)
-print('Counts:',event_traces_test['label'].value_counts())
-event_traces_test = Dataset.from_pandas(event_traces_test)
+
+######
+event_traces_test_Anomaly = event_traces_test.filter(lambda x: x['labels'] == 1).sample(n=10,random_state=42)
+###check
+print(event_traces_test_Anomaly[0])
 ###Explaining##
+model_pipeline = pipeline(task='text-classification',model=model,tokenizer=tokenizer,device=device,return_all_scores=True) #Function that returns propability for the classes
+explainer = shap.Explainer(model_pipeline) #build explainer object through pipeline
+shaps = explainer(event_traces_test_Anomaly['text'][:]) #generate explanations for the texts
+#print(shaps)
+single_shap_examples = shap.plots.text(shaps,display=False)
 
-explanations = []
-#attributions = []
-###############
-def prediction_function(text):
-    inputs = tokenizer(text) #returns input ids,attention_mask,input_type_ids,position_ids ->input embeddings
-    outputs = lora(inputs).logits #model logits
-    
+with open('/storage/data2/up1072604/saves/single_shap_examples.html') as f:
+    f.write(single_shap_examples,'w')
 
-##############PREDICTION FUNCTION#######################
-explainer = shap.Explainer(prediction_function,tokenizer)
-shaps = explainer(event_traces_test)
-html = shaps.plot.text(shaps)
-with open('/storage/data2/up1072604/saves/explanations_shap.html','w') as file:
-  file.writelines(explanations)
-'''
-print(attributions)
-for attr in attributions:
-    for _,score in attr:
-        print(score)
-attributions = [[score for _,score in attr] for attr in attributions]
-'''
+input('WAIT')
+#########
+attributed_class = shaps[:, :,"Anomaly"] #select explanations for the Anomaly class only
+sum_of_token_attributions_over_samples = shap.plots.bar(shaps[:, :, "Anomaly"].sum(0),display=False)
+mean_of_token_attributions_over_samples = shap.plots.bar(shaps[:, :, "Anomaly"].mean(0),display=False)
+
+#
+#word to be explained
+explaining_word = "error"
+explaining_word_attributions = attributed_class._flatten_feature_names()[explaining_word]
+#print(explaining_word_attributions)
+
+explaining_word_attributions_per_sample = shap.Explanation(values=np.array(explaining_word_attributions),base_values=np.zeros(len(explaining_word_attributions)),data=[explaining_word]*len(explaining_word_attributions))
+explaining_word_across_samples = shap.plots.bar(explaining_word_attributions_per_sample,display=False)
+
+#################SAVING FOR DISPLAY#########
+with open('/storage/data2/up1072604/saves/sum_of_token_attributions_over_samples.html') as f:
+    f.write(sum_of_token_attributions_over_samples,'w')
+###
+with open('/storage/data2/up1072604/saves/mean_of_token_attributions_over_samples.html') as f:
+    f.write(mean_of_token_attributions_over_samples,'w')
+###
+with open('/storage/data2/up1072604/saves/explaining_word_across_samples.html') as f:
+    f.write(explaining_word_across_samples,'w')
