@@ -8,10 +8,8 @@ import sys
 #
 Processes = int(sys.argv[1])
 print(f'Number of Processes: {Processes}')
-tokenizer_name = "allenai/longformer-base-4096"
-# "google/bigbird-roberta-base"
-
-#
+tokenizer_name = "google/bigbird-roberta-base"
+#"google/bigbird-roberta-base"
 start = time.perf_counter()
 #
 
@@ -38,8 +36,8 @@ def features_to_strings(entry):
 	####Tokenizing function###
 def tokenize_logs(entry):
     tokens = tokenizer(entry['text'],truncation=True,max_length=4096,padding=False) #basically dont pad let the datacollator do the paddding
-  	tokens['labels'] = entry['label']
-  	return tokens
+    tokens['labels'] = entry['label']
+    return tokens
 
 ##################
 
@@ -68,9 +66,9 @@ event_traces_validation = event_traces_validation.map(tokenize_logs,batched=True
 event_traces_test = event_traces_test.map(tokenize_logs,batched=True,num_proc=Processes,load_from_cache_file=False)
 ####################
 ####Save to Disk for reuse############
-event_traces_train.save_to_disk(f'/storage/data2/up1072604/data/tokenized_HDFS_train_longformer')
-event_traces_validation.save_to_disk(f'/storage/data2/up1072604/data/tokenized_HDFS_validation_longformer')
-event_traces_test.save_to_disk(f'/storage/data2/up1072604/data/tokenized_HDFS_test_longformer')
+event_traces_train.save_to_disk(f'/storage/data2/up1072604/data/tokenized_HDFS_train_bigbird')
+event_traces_validation.save_to_disk(f'/storage/data2/up1072604/data/tokenized_HDFS_validation_bigbird')
+event_traces_test.save_to_disk(f'/storage/data2/up1072604/data/tokenized_HDFS_test_bigbird')
 ####
 end = time.perf_counter()
 print(f'Time for preprocessing (Data Loading,conversion,tokenizing and saving) - Preprocessing Latency: {start-end:.2f}') 

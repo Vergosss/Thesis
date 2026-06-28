@@ -9,16 +9,18 @@ from datasets import Dataset,load_from_disk
 import evaluate
 from collections import Counter
 #################Big Bird or Longformer-Tokenizer and Collator###############
-tokenizer_name = "allenai/longformer-base-4096"
+tokenizer_name = "google/bigbird-roberta-base"
+#"google/bigbird-roberta-base"
 tokenizer = AutoTokenizer.from_pretrained(tokenizer_name,max_length=4096)
+print(tokenizer.model_max_length)
 collator = DataCollatorWithPadding(tokenizer)
 ###Get the graphics card###
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
 ################LOAD DATA###############
-event_traces_train = load_from_disk('/storage/data2/up1072604/data/tokenized_HDFS_train_longformer')
-event_traces_validation = load_from_disk('/storage/data2/up1072604/data/tokenized_HDFS_validation_longformer')
-event_traces_test = load_from_disk('/storage/data2/up1072604/data/tokenized_HDFS_test_longformer')
+event_traces_train = load_from_disk('/storage/data2/up1072604/data/tokenized_HDFS_train_bigbird')
+event_traces_validation = load_from_disk('/storage/data2/up1072604/data/tokenized_HDFS_validation_bigbird')
+event_traces_test = load_from_disk('/storage/data2/up1072604/data/tokenized_HDFS_test_bigbird')
 ##Describe the Dataset###
 print('Event traces train huggingface dataset:',event_traces_train)
 ###Verify Distribution of Labels in subsets###
@@ -36,11 +38,10 @@ print('No of labels:',no_of_labels)
 weights = torch.tensor([counter.total()/counter[x] for x in sorted(list(counter.keys()))]) #simpler: for x in sorted(list(counter)) #it is 1/counter[x]/counter.total()
 print('Weights vector:',weights)
 
-input('WAIT')
+#input('WAIT')
 ###tokenizer and relative function###
-tokenizer_name = "allenai/longformer-base-4096"
-# "google/bigbird-roberta-base"
-
+#tokenizer_name = "google/bigbird-roberta-base"
+#"allenai/longformer-base-4096"
 ###LoRa Config###
 lora_config = LoraConfig(
     task_type=TaskType.SEQ_CLS, #Task type. We classify texts so sequence classification
@@ -48,8 +49,8 @@ lora_config = LoraConfig(
     lora_alpha=14, #Alpha hyperparameter -> usually 2*r
     lora_dropout=0.1,
     inference_mode = False,
-    #target_modules=["query", "key","value"] #For BERT,RoBERTa,ALBERT,Distilroberta,BigBird
-    target_modules = ["query", "key","value","query_global","key_global","value_global"] # for , Longformer only
+    target_modules=["query", "key","value"] #For BERT,RoBERTa,ALBERT,Distilroberta,BigBird
+    #target_modules = ["query", "key","value","query_global","key_global","value_global"] # for , Longformer only
    #target_modules = ["q_lin","v_lin","k_lin"] #For DistilBERT
 )
 ###MODEL###
@@ -58,11 +59,13 @@ label2id = {label:id for id,label in enumerate(ground_truth)}
 id2label = {id:label for id,label in enumerate(ground_truth)}
 #
 
-longformer = LongformerForSequenceClassification.from_pretrained("allenai/longformer-base-4096",num_labels=no_of_labels,id2label=id2label,label2id=label2id,gradient_checkpointing=False)
-print('Longformer sliding window: ',longformer.config.attention_window)
-#big_bird = BigBirdForSequenceClassification.from_pretrained("google/bigbird-roberta-base",num_labels=no_of_labels,id2label=id2label,label2id=label2id)
+#longformer = LongformerForSequenceClassification.from_pretrained("allenai/longformer-base-4096",num_labels=no_of_labels,id2label=id2label,label2id=label2id,gradient_checkpointing=True)
+#print('Longformer sliding window: ',longformer.config.attention_window)
+bigbird = BigBirdForSequenceClassification.from_pretrained("google/bigbird-roberta-base",num_labels=no_of_labels,id2label=id2label,label2id=label2id,gradient_checkpointing=True)
+print('BigBird sliding window: ',bigbird.config.block_size)
+
 #Encapsulate
-lora = get_peft_model(longformer,lora_config)
+lora = get_peft_model(bigbird,lora_config)
 ###Feed model to CUDA##
 lora = lora.to(device)
 ###Check###
@@ -93,7 +96,7 @@ def compute_metrics_test(eval_pred):
   predictions = np.argmax(predictions, axis=-1)
   matrix = confusion_matrix.compute(references=labels,predictions=predictions)['confusion_matrix']
   matrix = pd.DataFrame(matrix,index=ground_truth,columns=ground_truth)
-  matrix.to_csv('/storage/data2/up1072604/saves/HDFS/longformer/longformer_confusion.csv')
+  matrix.to_csv('/storage/data2/up1072604/saves/HDFS/bigbird/bigbird_confusion.csv')
   other_metrics_scores = other_metrics.compute(predictions=predictions,references=labels,average=None)
   accuracy_score = accuracy.compute(predictions=predictions,references=labels)["accuracy"] 
   all_metrics = {"accuracy":accuracy_score} #initialization
@@ -143,13 +146,15 @@ training_arguments = TrainingArguments(
     overwrite_output_dir=True,  # When fine tuning starts overwrite the above directory
     eval_strategy = "epoch", #Evaluation should be done at the end of each epoch
     learning_rate=2e-5, #small learning rate -> better generalization
-    per_device_train_batch_size=16, #batch size for the training set
-    per_device_eval_batch_size=64, #batch size for evaluation
+    per_device_train_batch_size=4, #batch size for the training set
+    per_device_eval_batch_size=8, #batch size for evaluation
     num_train_epochs=3, #epochs for the model to run
     weight_decay=0.01, #Regularization to reduce overfitting
     save_strategy= "no", #Don't save checkpoints
-    gradient_checkpointing=False,
+    gradient_checkpointing=True,
+    gradient_accumulation_steps=8,
     bf16=True,
+    group_by_length=True
 )
 ###Instantiate ImbalancedTrainer###
 trainer = ImbalancedTrainer(
@@ -158,10 +163,10 @@ trainer = ImbalancedTrainer(
     train_dataset=event_traces_train, #Training set
     eval_dataset=event_traces_validation, # validation to set on this the model will be evaluated at the end of each epoch
     compute_metrics=compute_metrics, #Evaluation function to run at each epoch
-    tokenizer=tokenizer,
+    processing_class=tokenizer,
     data_collator=collator
    )
-input('WAIT')
+#input('WAIT')
 ###Train/Fine-tune the model###
 trainer.train()
 ###Change Evaluation function to calculate confusion matrix- Evaluation###
@@ -170,9 +175,9 @@ results = trainer.evaluate(eval_dataset=event_traces_test) #Evaluate on unseen t
 print(results)
 
 ###Save the model###
-tokenizer.save_pretrained('/storage/data2/up1072604/saved_tokenizers/HDFS/longformer') #save the tokenizer
-model.config.save_pretrained('/storage/data2/up1072604/saved_models/HDFS/longformer') #save the base model's config such as id2label etc
-lora.save_pretrained('/storage/data2/up1072604/saved_models/HDFS/longformer') #Save the reduced matrices
+tokenizer.save_pretrained('/storage/data2/up1072604/saved_tokenizers/HDFS/bigbird') #save the tokenizer
+bigbird.config.save_pretrained('/storage/data2/up1072604/saved_models/HDFS/bigbird') #save the base model's config such as id2label etc
+lora.save_pretrained('/storage/data2/up1072604/saved_models/HDFS/bigbird') #Save the reduced matrices
 #########
 #tokenizer.save_pretrained('/storage/data2/up1072604/saved_tokenizers/HDFS/bigbird') #save the tokenizer
 #model.config.save_pretrained('/storage/data2/up1072604/saved_models/HDFS/bigbird') #save the base model's config such as id2label etc

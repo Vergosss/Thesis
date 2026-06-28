@@ -24,8 +24,6 @@ print(lora.config.label2id)
 print('Num labels:',lora.config.num_labels)
 lora.eval()
 ###
-event_traces_train = load_from_disk('/storage/data2/up1072604/data/tokenized_HDFS_train_distilbert')
-event_traces_validation = load_from_disk('/storage/data2/up1072604/data/tokenized_HDFS_validation_distilbert')
 event_traces_test = load_from_disk('/storage/data2/up1072604/data/tokenized_HDFS_test_distilbert')
 
 ###Subsample for display###

@@ -12,7 +12,7 @@ tokenizer_name = "allenai/longformer-base-4096"
 # "google/bigbird-roberta-base"
 
 #
-start = time.perf_counter()
+#start = time.perf_counter()
 #
 
 tokenizer = AutoTokenizer.from_pretrained(tokenizer_name,max_length=4096)
@@ -37,7 +37,7 @@ def features_to_strings(entry):
 
 	####Tokenizing function###
 def tokenize_logs(entry):
-  	tokens = tokenizer(entry['text'],truncation=False,max_length=4096,return_length=True)
+  	tokens = tokenizer(entry['text'],truncation=False,max_length=4096,return_length=True,padding=False)
   	#tokens['labels'] = entry['label']
   	return {"length": [len(text) for text in tokens["input_ids"]]}
 
@@ -85,6 +85,7 @@ print("p95_test:", np.percentile(len_test, 95))
 print("p99_test:", np.percentile(len_test, 99))
 ###Tokenizing###
 input('WAIT')
+'''
 event_traces_train = event_traces_train.map(tokenize_logs,batched=True,num_proc=Processes,load_from_cache_file=False)
 event_traces_validation = event_traces_validation.map(tokenize_logs,batched=True,num_proc=Processes,load_from_cache_file=False)
 event_traces_test = event_traces_test.map(tokenize_logs,batched=True,num_proc=Processes,load_from_cache_file=False)
@@ -97,3 +98,4 @@ event_traces_test.save_to_disk(f'/storage/data2/up1072604/data/tokenized_HDFS_te
 end = time.perf_counter()
 print(f'Time for preprocessing (Data Loading,conversion,tokenizing and saving) - Preprocessing Latency: {start-end:.2f}') 
 print(f'How many samples per second can this pipeline handle - Preprocessing Throughput: {len(event_traces)/(start-end):.2f}')
+'''
