@@ -31,7 +31,7 @@ def features_to_strings(entry):
 
 	####Tokenizing function###
 def tokenize_logs(entry):
-  	tokens = tokenizer(entry['text'],padding='max_length',truncation=True)
+  	tokens = tokenizer(entry['text'],padding='max_length',truncation=True,max_length=512)
   	tokens['labels'] = entry['label']
   	return tokens
 
@@ -44,5 +44,5 @@ event_traces = Dataset.from_pandas(event_traces)
 event_traces = event_traces.map(tokenize_logs,batched=True,num_proc=Processes,load_from_cache_file=False)
 event_traces.save_to_disk(f'/storage/data2/up1072604/data/tokenized_HDFS_{Processes}_Processes')
 end = time.perf_counter()
-print(f'Time for preprocessing (Data Loading,conversion,tokenizing and saving) - Preprocessing Latency: {start-end:.2f}') 
-print(f'How many samples per second can this pipeline handle - Preprocessing Throughput: {len(event_traces)/(start-end):.2f}')
+print(f'Time for preprocessing (Data Loading,conversion,tokenizing and saving) - Preprocessing Latency: {end-start:.2f}') 
+print(f'How many samples per second can this pipeline handle - Preprocessing Throughput: {len(event_traces)/(end-start):.2f}')

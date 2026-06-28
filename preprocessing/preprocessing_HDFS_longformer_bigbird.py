@@ -71,5 +71,5 @@ event_traces_validation.save_to_disk(f'/storage/data2/up1072604/data/tokenized_H
 event_traces_test.save_to_disk(f'/storage/data2/up1072604/data/tokenized_HDFS_test_bigbird')
 ####
 end = time.perf_counter()
-print(f'Time for preprocessing (Data Loading,conversion,tokenizing and saving) - Preprocessing Latency: {start-end:.2f}') 
-print(f'How many samples per second can this pipeline handle - Preprocessing Throughput: {len(event_traces)/(start-end):.2f}')
+print(f'Time for preprocessing (Data Loading,conversion,tokenizing and saving) - Preprocessing Latency: {end-start:.2f}') 
+print(f'How many samples per second can this pipeline handle - Preprocessing Throughput: {len(event_traces)/(end-start):.2f}')
