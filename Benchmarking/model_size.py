@@ -17,6 +17,6 @@ lora = lora.merge_and_unload()
 ###############################
 precision = 4 #in bytes
 print(f'Model\'s Numerical Precision {set(parameter.dtype for parameter in model.parameters())}')
-number_of_parameters = sum(parameter.numel() for parameter in lora.parameters()) #since we are doing inference all parameters are used. If it was fine tuning then requires_grad
+number_of_parameters = sum(parameter.numel() for parameter in lora.parameters()) #since we are doing inference all parameters are used. If it was fine tuning then requires_grad should be set to true
 number_of_buffers = sum(buffer.numel() for buffer in lora.buffers())
 print(f'Model size in MegaBytes: {(number_of_parameters * precision + number_of_buffers* precision) / (1024**2) :.2f} ')
