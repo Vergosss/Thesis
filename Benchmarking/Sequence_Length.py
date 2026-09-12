@@ -17,7 +17,7 @@ tokenizer_name = "allenai/longformer-base-4096"
 
 tokenizer = AutoTokenizer.from_pretrained(tokenizer_name,max_length=4096)
 #
-event_traces = pd.read_csv('/storage/data2/up1072604/data/Event_traces.csv',usecols=['BlockId','Label','Features'])
+event_traces = pd.read_csv('./../data/Event_traces.csv',usecols=['BlockId','Label','Features'])
 print('CHECK:',event_traces.index.duplicated().any())
 event_traces['Label'] = event_traces['Label'].map({'Success':0,'Fail':1})
 ###Get the templates to match with###
@@ -91,9 +91,9 @@ event_traces_validation = event_traces_validation.map(tokenize_logs,batched=True
 event_traces_test = event_traces_test.map(tokenize_logs,batched=True,num_proc=Processes,load_from_cache_file=False)
 ####################
 ####Save to Disk for reuse############
-event_traces_train.save_to_disk(f'/storage/data2/up1072604/data/tokenized_HDFS_train_longformer')
-event_traces_validation.save_to_disk(f'/storage/data2/up1072604/data/tokenized_HDFS_validation_longformer')
-event_traces_test.save_to_disk(f'/storage/data2/up1072604/data/tokenized_HDFS_test_longfomer')
+event_traces_train.save_to_disk(f'./../data/tokenized_HDFS_train_longformer')
+event_traces_validation.save_to_disk(f'./../data/tokenized_HDFS_validation_longformer')
+event_traces_test.save_to_disk(f'./../data/tokenized_HDFS_test_longfomer')
 ####
 end = time.perf_counter()
 print(f'Time for preprocessing (Data Loading,conversion,tokenizing and saving) - Preprocessing Latency: {start-end:.2f}') 
