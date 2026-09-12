@@ -37,13 +37,13 @@ class CustomTokenizer:
     def __getattr__(self, name):
         return getattr(self.tokenizer, name)
 ###
-config = AutoConfig.from_pretrained("/storage/data2/up1072604/saved_models/HDFS/distilbert")
+config = AutoConfig.from_pretrained("./../saved_models/HDFS/distilbert")
 model = AutoModelForSequenceClassification.from_pretrained('distilbert-base-uncased',config=config)
 ###
-tokenizer = AutoTokenizer.from_pretrained('/storage/data2/up1072604/saved_tokenizers/HDFS/distilbert')
+tokenizer = AutoTokenizer.from_pretrained('./../saved_tokenizers/HDFS/distilbert')
 tokenizer = CustomTokenizer(tokenizer)
 ###
-lora = PeftModel.from_pretrained(model,'/storage/data2/up1072604/saved_models/HDFS/distilbert')
+lora = PeftModel.from_pretrained(model,'./../saved_models/HDFS/distilbert')
 lora = lora.merge_and_unload()
 lora = lora.to(device)
 ######
@@ -52,10 +52,10 @@ print(lora.config.label2id)
 print('Num labels:',lora.config.num_labels)
 lora.eval()
 ###
-event_traces = pd.read_csv('/storage/data2/up1072604/data/Event_traces.csv',usecols=['BlockId','Label','Features'])
+event_traces = pd.read_csv('./../data/Event_traces.csv',usecols=['BlockId','Label','Features'])
 event_traces['Label'] = event_traces['Label'].map({'Success':0,'Fail':1})
 ###Get the templates to match with###
-log_templates = pd.read_csv('/storage/data2/up1072604/data/HDFS.log_templates.csv')
+log_templates = pd.read_csv('./../data/HDFS.log_templates.csv')
 ###Drop Block Id###
 event_traces.drop(columns=['BlockId'],inplace=True) #drop the block id
 ###
@@ -86,7 +86,7 @@ print('Counts:',event_traces_test['label'].value_counts())
 explainer = SequenceClassificationExplainer(lora,tokenizer)
 explanations = []
 #attributions = []
-#Ta attributions tou IG einai ena list/array me tuples (token,score)##
+#Attributions of IG is a list/array of tuples (token,score)##
 def explain(entry):
     attribution = explainer(entry['text']) #for predicted class
     #attributions.append(attribution)
@@ -94,12 +94,5 @@ def explain(entry):
     explanations.append(f'{html.data}\n')
 #############
 event_traces_test.apply(explain,axis=1)
-with open('/storage/data2/up1072604/saves/explanations.html','w') as file:
+with open('./../saves/explanations.html','w') as file:
   file.writelines(explanations)
-'''
-print(attributions)
-for attr in attributions:
-    for _,score in attr:
-        print(score)
-attributions = [[score for _,score in attr] for attr in attributions]
-'''
