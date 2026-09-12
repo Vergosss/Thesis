@@ -7,15 +7,18 @@ The source code is written in Python using the **HuggingFace** framework. The ex
   - **Pytorch**
   - **Tensorflow**
   - **Transformers**
+  - 
 For data preprocessing, mathematical operations and visualization:<br>
   - **Pandas**
   - **Numpy**
   - **Matplotlib**
-  - **Seaborn** 
+  - **Seaborn**
+  - 
 Finally for the explainable AI part these libraries were used:<br>
    - **Ferret**
   - **Shap**
   - **Transformers Interpret**<br>
+
 For the Log Anomaly Detection task BERT, DistilBERT, RoBerta, ALBERT, Longformer and Bigbird were compared on the Binary classification of log sequences into Benign or Anomaly category. The most lightweight model (DistilBERT) was then used for the classification of network packet flows into Benign-Malicious categories (binary classification) and into different attack types (Multi-Class Classification). A flow preprocessing technique is used, converting them into a textual form so DistilBERT can handle them. The model is compared with various machine learning models and neural networks such as XGBoost, Decision Trees, Random Forest and MultiLayer Perceptron. DistilBERT's predictions on both tasks were analyzed by the explainable AI techniques SHAP and Integrated Gradients and these two were compared using the Sufficiency, Comprehensiveness and Correlation with Leave One Out scores. Finally, for the Log Anomaly Detection task, the SHAP explanations were visualized showing the influence of each token-word on classifying its sequence as Anomalous.
  
 ## Project Structure
