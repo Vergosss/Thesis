@@ -9,6 +9,7 @@ from abc import ABC, abstractmethod
 from tqdm import tqdm
 #############
 TEST_SET = "TEST_SET"
+#######WRAPPER TO CONVERT MY DATAFRAMES TO Ferret Dataset###########
 class CustomDataset(BaseDataset):
     def __init__(self,dataframe):
         self.dataframe = dataframe
@@ -39,12 +40,12 @@ class CustomDataset(BaseDataset):
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 ###Load Saved tokenizer-model config- and lora weights###
-tokenizer = AutoTokenizer.from_pretrained('/storage/data2/up1072604/saved_tokenizers/IoT23/multi')
+tokenizer = AutoTokenizer.from_pretrained('./../saved_tokenizers/IoT23/multi')
 #
-config = AutoConfig.from_pretrained("/storage/data2/up1072604/saved_models/IoT23/multi")
+config = AutoConfig.from_pretrained("./../saved_models/IoT23/multi")
 model = AutoModelForSequenceClassification.from_pretrained('distilbert-base-uncased',config=config)
 #
-lora = PeftModel.from_pretrained(model,'/storage/data2/up1072604/saved_models/IoT23/multi')
+lora = PeftModel.from_pretrained(model,'./../saved_models/IoT23/multi')
 lora = lora.merge_and_unload()
 lora = lora.to(device)
 ##
@@ -60,7 +61,7 @@ integrated_gradients = IntegratedGradientExplainer(lora,tokenizer)
 #
 bench = Benchmark(lora,tokenizer,explainers=[shap,integrated_gradients])
 ###
-sequences = pd.read_csv('/storage/data2/up1072604/data/IoT23_sequences_multi.csv')
+sequences = pd.read_csv('./../data/IoT23_sequences_multi.csv')
 print('CHECK:',sequences.index.duplicated().any())
 sequences = sequences.sample(frac=1,random_state=42) #Shuffle. Do this only for iot23-edgeiiotset NOT HDFS(HDFS does not shuffle at first!)
 ###Train-val-test split- Get the test set the same set from training script by setting same random state###
