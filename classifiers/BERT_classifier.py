@@ -14,7 +14,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
 ###Load Data###
-sequences = pd.read_csv('/storage/data2/up1072604/data/IoT23_sequences_multi.csv')
+sequences = pd.read_csv('./../data/IoT23_sequences_multi.csv')
 ###shuffle###
 sequences = sequences.sample(frac=1,random_state=42)
 
@@ -111,7 +111,7 @@ def compute_metrics_test(eval_pred):
   predictions = np.argmax(predictions, axis=-1)
   matrix = confusion_matrix.compute(references=labels,predictions=predictions)['confusion_matrix']
   matrix = pd.DataFrame(matrix,index=ground_truth,columns=ground_truth)
-  matrix.to_csv('/storage/data2/up1072604/saves/IoT23/multi/IoT23_confusion_multi.csv')
+  matrix.to_csv('./../saves/IoT23/multi/IoT23_confusion_multi.csv')
   other_metrics_scores = other_metrics.compute(predictions=predictions,references=labels,average=None)
   accuracy_score = accuracy.compute(predictions=predictions,references=labels)["accuracy"] 
   all_metrics = {"accuracy":accuracy_score} #initialization
@@ -158,7 +158,7 @@ class ImbalancedTrainer(Trainer):
  
 ###Training arguments###
 training_arguments = TrainingArguments(
-    output_dir = '/storage/data2/up1072604/run', #Location where the fine tuned model's weights will be stored
+    output_dir = './../run', #Location where the fine tuned model's weights will be stored
     overwrite_output_dir=True,  # When fine tuning starts overwrite the above directory
     eval_strategy = "epoch", #Evaluation should be done at the end of each epoch
     learning_rate=2e-5, #small learning rate -> better generalization
@@ -183,7 +183,7 @@ trainer.compute_metrics = compute_metrics_test
 results = trainer.evaluate(eval_dataset=sequences_test) #Evaluate on unseen test subset
 print(results)
 ###Save the model###
-tokenizer.save_pretrained('/storage/data2/up1072604/saved_tokenizers/IoT23/multi') #save the tokenizer
-model.config.save_pretrained('/storage/data2/up1072604/saved_models/IoT23/multi') #save the base model's config such as id2label etc
-lora.save_pretrained('/storage/data2/up1072604/saved_models/IoT23/multi') #Save the reduced matrices
+tokenizer.save_pretrained('./../saved_tokenizers/IoT23/multi') #save the tokenizer
+model.config.save_pretrained('./../saved_models/IoT23/multi') #save the base model's config such as id2label etc
+lora.save_pretrained('./../saved_models/IoT23/multi') #Save the reduced matrices
 #######
