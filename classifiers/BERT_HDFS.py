@@ -12,10 +12,10 @@ import evaluate
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
 ###Load event vectors/blocks###
-event_traces = pd.read_csv('/storage/data2/up1072604/data/Event_traces.csv',usecols=['BlockId','Label','Features'])
+event_traces = pd.read_csv('./../data/Event_traces.csv',usecols=['BlockId','Label','Features'])
 event_traces['Label'] = event_traces['Label'].map({'Success':0,'Fail':1})
 ###Get the templates to match with###
-log_templates = pd.read_csv('/storage/data2/up1072604/data/HDFS.log_templates.csv')
+log_templates = pd.read_csv('./../data/HDFS.log_templates.csv')
 
 ###Dictionary of EventIds-Event text###
 event_dictionary = dict(zip(log_templates['EventId'],log_templates['EventTemplate']))
@@ -123,7 +123,7 @@ def compute_metrics_test(eval_pred):
   predictions = np.argmax(predictions, axis=-1)
   matrix = confusion_matrix.compute(references=labels,predictions=predictions)['confusion_matrix']
   matrix = pd.DataFrame(matrix,index=ground_truth,columns=ground_truth)
-  matrix.to_csv('/storage/data2/up1072604/saves/HDFS/roberta/HDFS_confusion.csv')
+  matrix.to_csv('./../saves/HDFS/roberta/HDFS_confusion.csv')
   other_metrics_scores = other_metrics.compute(predictions=predictions,references=labels,average=None)
   accuracy_score = accuracy.compute(predictions=predictions,references=labels)["accuracy"] 
   all_metrics = {"accuracy":accuracy_score} #initialization
@@ -169,7 +169,7 @@ class ImbalancedTrainer(Trainer):
  
 ###Training arguments###
 training_arguments = TrainingArguments(
-    output_dir = '/storage/data2/up1072604/run', #Location where the fine tuned model's weights will be stored
+    output_dir = './../run', #Location where the fine tuned model's weights will be stored
     overwrite_output_dir=True,  # When fine tuning starts overwrite the above directory
     eval_strategy = "epoch", #Evaluation should be done at the end of each epoch
     learning_rate=2e-5, #small learning rate -> better generalization
@@ -195,6 +195,6 @@ results = trainer.evaluate(eval_dataset=event_traces_test) #Evaluate on unseen t
 print(results)
 
 ###Save the model###
-tokenizer.save_pretrained('/storage/data2/up1072604/saved_tokenizers/HDFS/roberta') #save the tokenizer
-model.config.save_pretrained('/storage/data2/up1072604/saved_models/HDFS/roberta') #save the base model's config such as id2label etc
-lora.save_pretrained('/storage/data2/up1072604/saved_models/HDFS/roberta') #Save the reduced matrices
+tokenizer.save_pretrained('./../saved_tokenizers/HDFS/roberta') #save the tokenizer
+model.config.save_pretrained('./../saved_models/HDFS/roberta') #save the base model's config such as id2label etc
+lora.save_pretrained('./../saved_models/HDFS/roberta') #Save the reduced matrices
