@@ -18,9 +18,9 @@ collator = DataCollatorWithPadding(tokenizer)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
 ################LOAD DATA###############
-event_traces_train = load_from_disk('/storage/data2/up1072604/data/tokenized_HDFS_train_bigbird')
-event_traces_validation = load_from_disk('/storage/data2/up1072604/data/tokenized_HDFS_validation_bigbird')
-event_traces_test = load_from_disk('/storage/data2/up1072604/data/tokenized_HDFS_test_bigbird')
+event_traces_train = load_from_disk('./../data/tokenized_HDFS_train_bigbird')
+event_traces_validation = load_from_disk('./../data/tokenized_HDFS_validation_bigbird')
+event_traces_test = load_from_disk('./../data/tokenized_HDFS_test_bigbird')
 ##Describe the Dataset###
 print('Event traces train huggingface dataset:',event_traces_train)
 ###Verify Distribution of Labels in subsets###
@@ -38,7 +38,6 @@ print('No of labels:',no_of_labels)
 weights = torch.tensor([counter.total()/counter[x] for x in sorted(list(counter.keys()))]) #simpler: for x in sorted(list(counter)) #it is 1/counter[x]/counter.total()
 print('Weights vector:',weights)
 
-#input('WAIT')
 ###tokenizer and relative function###
 #tokenizer_name = "google/bigbird-roberta-base"
 #"allenai/longformer-base-4096"
@@ -96,7 +95,7 @@ def compute_metrics_test(eval_pred):
   predictions = np.argmax(predictions, axis=-1)
   matrix = confusion_matrix.compute(references=labels,predictions=predictions)['confusion_matrix']
   matrix = pd.DataFrame(matrix,index=ground_truth,columns=ground_truth)
-  matrix.to_csv('/storage/data2/up1072604/saves/HDFS/bigbird/bigbird_confusion.csv')
+  matrix.to_csv('./../saves/HDFS/bigbird/bigbird_confusion.csv')
   other_metrics_scores = other_metrics.compute(predictions=predictions,references=labels,average=None)
   accuracy_score = accuracy.compute(predictions=predictions,references=labels)["accuracy"] 
   all_metrics = {"accuracy":accuracy_score} #initialization
@@ -142,7 +141,7 @@ class ImbalancedTrainer(Trainer):
  
 ###Training arguments###
 training_arguments = TrainingArguments(
-    output_dir = '/storage/data2/up1072604/run', #Location where the fine tuned model's weights will be stored
+    output_dir = './../run', #Location where the fine tuned model's weights will be stored
     overwrite_output_dir=True,  # When fine tuning starts overwrite the above directory
     eval_strategy = "epoch", #Evaluation should be done at the end of each epoch
     learning_rate=2e-5, #small learning rate -> better generalization
@@ -166,7 +165,7 @@ trainer = ImbalancedTrainer(
     processing_class=tokenizer,
     data_collator=collator
    )
-#input('WAIT')
+
 ###Train/Fine-tune the model###
 trainer.train()
 ###Change Evaluation function to calculate confusion matrix- Evaluation###
@@ -175,10 +174,6 @@ results = trainer.evaluate(eval_dataset=event_traces_test) #Evaluate on unseen t
 print(results)
 
 ###Save the model###
-tokenizer.save_pretrained('/storage/data2/up1072604/saved_tokenizers/HDFS/bigbird') #save the tokenizer
-bigbird.config.save_pretrained('/storage/data2/up1072604/saved_models/HDFS/bigbird') #save the base model's config such as id2label etc
-lora.save_pretrained('/storage/data2/up1072604/saved_models/HDFS/bigbird') #Save the reduced matrices
-#########
-#tokenizer.save_pretrained('/storage/data2/up1072604/saved_tokenizers/HDFS/bigbird') #save the tokenizer
-#model.config.save_pretrained('/storage/data2/up1072604/saved_models/HDFS/bigbird') #save the base model's config such as id2label etc
-#lora.save_pretrained('/storage/data2/up1072604/saved_models/HDFS/bigbird') #Save the reduced matrices
+tokenizer.save_pretrained('./../saved_tokenizers/HDFS/bigbird') #save the tokenizer
+bigbird.config.save_pretrained('./../saved_models/HDFS/bigbird') #save the base model's config such as id2label etc
+lora.save_pretrained('./../saved_models/HDFS/bigbird') #Save the reduced matrices
