@@ -16,7 +16,6 @@ drive.mount('/content/drive')
 #####ENVIRONMENT AND CONFIGURATIONS#######
 print("Num GPUs Available:", len(tf.config.list_physical_devices('GPU')))
 print(tf.config.list_physical_devices('GPU'))  # Show GPU details
-#print(tf.__version__)
 
 PROBLEM = 'multi'
 ####
