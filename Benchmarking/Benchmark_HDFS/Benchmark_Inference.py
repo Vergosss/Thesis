@@ -12,16 +12,16 @@ num_gpus= torch.cuda.device_count()
 print('GPUs:',num_gpus)
 #
 ######################PER STEP LATENCIES/THROUGHPUTS ON A DISTRIBUTED SETUP############
-event_traces = load_from_disk('/storage/data2/up1072604/data/tokenized_dataset')
+event_traces = load_from_disk('./../data/tokenized_dataset')
 ###Load Saved tokenizer-model config- and lora weights###
 
 ###Load Model config and adapter weights###
 
-config = AutoConfig.from_pretrained("/storage/data2/up1072604/saved_models/HDFS/distilbert")
+config = AutoConfig.from_pretrained("./../saved_models/HDFS/distilbert")
 model = AutoModelForSequenceClassification.from_pretrained('distilbert-base-uncased',config=config)
 #
 
-lora = PeftModel.from_pretrained(model,'/storage/data2/up1072604/saved_models/HDFS/distilbert')
+lora = PeftModel.from_pretrained(model,'./../saved_models/HDFS/distilbert')
 lora = lora.merge_and_unload()
 '''
 print('RANKS',os.environ["RANK"])
@@ -40,14 +40,14 @@ print(lora.config.label2id)
 print('Num labels:',lora.config.num_labels)
 ##
 lora.eval() ###Evaluation mode since we are running inference
-	###Not really need since After we previously fine-tuned with lora the config it saves has already inference_mode=True
+	###Not really needed since After we previously fine-tuned with lora the config it saves has already inference_mode=True
 	##########Load Data##########
 	#Create text from vector -> convert to dataset -> tokenize texts
 
  
 ###################################
 training_arguments = TrainingArguments(
-    output_dir = '/storage/data2/up1072604/run', #Location where the fine tuned model's weights will be stored
+    output_dir = './../run', #Location where the fine tuned model's weights will be stored
     overwrite_output_dir=True,  # When fine tuning starts overwrite the above directory
     per_device_eval_batch_size=128, #batch size for evaluation
     dataloader_num_workers=4,
