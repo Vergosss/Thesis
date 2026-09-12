@@ -9,10 +9,10 @@ print('GPUs:',num_gpus)
 
 ###Load Model config and adapter weights. Merge into one model the merged model will be used for inference benchmarking###
 
-config = AutoConfig.from_pretrained("/storage/data2/up1072604/saved_models/HDFS/distilbert")
+config = AutoConfig.from_pretrained("./../saved_models/HDFS/distilbert")
 model = AutoModelForSequenceClassification.from_pretrained('distilbert-base-uncased',config=config)
 #
-lora = PeftModel.from_pretrained(model,'/storage/data2/up1072604/saved_models/HDFS/distilbert')
+lora = PeftModel.from_pretrained(model,'./../saved_models/HDFS/distilbert')
 lora = lora.merge_and_unload()
 ###############################
 precision = 4 #in bytes
