@@ -84,7 +84,7 @@ event_traces = pd.read_csv('./../data/Event_traces.csv',usecols=['BlockId','Labe
 print('CHECK:',event_traces.index.duplicated().any())
 event_traces['Label'] = event_traces['Label'].map({'Success':0,'Fail':1})
 ###Get the templates to match with###
-log_templates = pd.read_csv('/storage/data2/up1072604/data/HDFS.log_templates.csv')
+log_templates = pd.read_csv('./../data/HDFS.log_templates.csv')
 ###Drop Block Id###
 event_traces.drop(columns=['BlockId'],inplace=True) #drop the block id
 ###
