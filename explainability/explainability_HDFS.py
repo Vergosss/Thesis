@@ -61,10 +61,10 @@ tokenizer = AutoTokenizer.from_pretrained('/storage/data2/up1072604/saved_tokeni
 tokenizer = CustomTokenizer(tokenizer)
 ###Load Model config and adapter weights###
 
-config = AutoConfig.from_pretrained("/storage/data2/up1072604/saved_models/HDFS/roberta")
+config = AutoConfig.from_pretrained("./../saved_models/HDFS/roberta")
 model = AutoModelForSequenceClassification.from_pretrained('roberta-base',config=config)
 #
-lora = PeftModel.from_pretrained(model,'/storage/data2/up1072604/saved_models/HDFS/roberta')
+lora = PeftModel.from_pretrained(model,'./../saved_models/HDFS/roberta')
 lora = lora.merge_and_unload()
 lora = lora.to(device)
 ##
@@ -80,11 +80,11 @@ integrated_gradients = IntegratedGradientExplainer(lora,tokenizer)
 #Benchmark object to run explainability###
 bench = Benchmark(lora,tokenizer,explainers=[shap,integrated_gradients])
 ###
-event_traces = pd.read_csv('/storage/data2/up1072604/data/Event_traces.csv',usecols=['BlockId','Label','Features'])
+event_traces = pd.read_csv('./../data/Event_traces.csv',usecols=['BlockId','Label','Features'])
 print('CHECK:',event_traces.index.duplicated().any())
 event_traces['Label'] = event_traces['Label'].map({'Success':0,'Fail':1})
 ###Get the templates to match with###
-log_templates = pd.read_csv('/storage/data2/up1072604/data/HDFS.log_templates.csv')
+log_templates = pd.read_csv('./../data/HDFS.log_templates.csv')
 ###Drop Block Id###
 event_traces.drop(columns=['BlockId'],inplace=True) #drop the block id
 ###
